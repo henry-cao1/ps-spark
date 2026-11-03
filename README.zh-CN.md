@@ -86,6 +86,8 @@ PS Spark 通过侧载安装，需要打开 Photoshop 的开发者模式：
 
 ### Windows
 
+安装包从 [Releases](https://github.com/henry-cao1/ps-spark/releases/latest) 下载。
+
 1. 完全退出 Photoshop。
 2. 把发布包解压到不含空格和中文的路径。
 3. 双击 `Install-Windows.bat`：复制到 `%APPDATA%\Adobe\UXP\Plugins\External\`，

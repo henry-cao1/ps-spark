@@ -93,6 +93,8 @@ then restart Photoshop.
 
 ### Windows
 
+Download the latest package from [Releases](https://github.com/henry-cao1/ps-spark/releases/latest).
+
 1. Quit Photoshop completely.
 2. Unzip the release package to a path without spaces or non-ASCII characters.
 3. Run `Install-Windows.bat`. It copies the plugin to
