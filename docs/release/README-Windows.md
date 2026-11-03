@@ -47,5 +47,6 @@ Full instructions and troubleshooting: `INSTALL-Windows.txt`.
 
 ## License
 
-AGPL-3.0. See [LICENSE](../../LICENSE). If you distribute a modified version you must also make
-the complete source available under the same license.
+AGPL-3.0. See [LICENSE](https://github.com/henry-cao1/ps-spark/blob/main/LICENSE). If you
+distribute a modified version you must also make the complete source available under the same
+license.
