@@ -23,7 +23,7 @@
     "test:comfy": "node test-comfy.cjs",
     "test:queue": "node test-queue.cjs",
     "test:scheduler": "node test-scheduler.cjs",
-    "pretest": "node ../tools/build.mjs"
+    "pretest": "node ../tools/build.mjs && node ../tools/build.mjs --target=oss"
   },
   "devDependencies": {
     "pngjs": "^7.0.0",
