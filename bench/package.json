@@ -14,7 +14,7 @@
     "test:bench": "node test-bench.cjs",
     "test:web": "node test-web.mjs",
     "test:pool": "node test-pool.mjs",
-    "test": "node test-dev-ui.cjs && node test-comfy.cjs && node test-queue.cjs && node test-scheduler.cjs && node test-bench.cjs && node test-web.mjs && node test-pool.mjs && node test-prompts.mjs",
+    "test": "node test-dev-ui.cjs && node test-comfy.cjs && node test-queue.cjs && node test-scheduler.cjs && node test-bench.cjs && node test-ps-retry.cjs && node test-web.mjs && node test-pool.mjs && node test-prompts.mjs",
     "dry": "node run.mjs --config config.json --dry-run",
     "smoke": "node run.mjs --config config.json --cases cutout_basic,erase_object --models 1,2 --repeat 1",
     "bench": "node run.mjs --config config.json",
@@ -22,7 +22,8 @@
     "retest": "node retest.mjs",
     "test:comfy": "node test-comfy.cjs",
     "test:queue": "node test-queue.cjs",
-    "test:scheduler": "node test-scheduler.cjs"
+    "test:scheduler": "node test-scheduler.cjs",
+    "pretest": "node ../tools/build.mjs"
   },
   "devDependencies": {
     "pngjs": "^7.0.0",

@@ -74,15 +74,22 @@ async function waitServer() {
 
 makeFixture();
 
-/* 独立配置文件：不动用户的 bench/config.json */
-let tmpCfg = { providers: { grsai: { baseUrl: "https://grsai.dakka.com.cn", apiKey: "" } }, models: [], timeoutSec: 5 };
-try {
-  const real = JSON.parse(fs.readFileSync(path.join(HERE, "config.json"), "utf8"));
-  tmpCfg = real;
-  tmpCfg.providers = tmpCfg.providers || {};
-  tmpCfg.providers.grsai = tmpCfg.providers.grsai || {};
-  tmpCfg.providers.grsai.apiKey = "";
-} catch (e) { /* 用默认 */ }
+/* 独立配置文件：不读用户的 bench/config.json，保证新克隆也能跑；
+ * 本地预设用一条最小工作流，专门验证「能力未声明 → 拒绝」这条闸门。 */
+const tmpCfg = {
+  providers: { grsai: { baseUrl: "https://grsai.dakka.com.cn", apiKey: "" } },
+  models: [],
+  timeoutSec: 5,
+  comfy: {
+    presets: [{
+      id: "test-local",
+      name: "测试本机",
+      url: "http://127.0.0.1:8188",
+      workflow: "{}",
+      caps: ["t2i"]
+    }]
+  }
+};
 fs.writeFileSync(CFG, JSON.stringify(tmpCfg, null, 1));
 
 const child = spawn(process.execPath, [path.join(HERE, "web-server.mjs"), "--port", String(PORT), "--data", DATA, "--config", CFG], {
