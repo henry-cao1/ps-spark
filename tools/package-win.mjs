@@ -153,6 +153,146 @@ echo.
 pause
 `;
 
+const INSTALL_BAT_EN = String.raw`@echo off
+chcp 65001 >nul
+setlocal EnableDelayedExpansion
+title PS Spark Installer (Windows)
+
+rem ============================================================
+rem  PS Spark one-click install: copy to the UXP side-load folder
+rem  Usage: double-click, or run Install-Windows.bat -y to skip prompts
+rem ============================================================
+
+set "VER=__VER__"
+set "SRC=%~dp0com.psspark.ps.assistant_%VER%"
+set "DST=%APPDATA%\Adobe\UXP\Plugins\External"
+set "TARGET=%DST%\com.psspark.ps.assistant_%VER%"
+
+if not exist "%SRC%\manifest.json" (
+  echo [x] Cannot find com.psspark.ps.assistant_%VER%.
+  echo     Put this file next to that folder and run it again.
+  echo.
+  pause
+  exit /b 1
+)
+
+tasklist /FI "IMAGENAME eq Photoshop.exe" 2>nul | find /i "Photoshop.exe" >nul
+if not errorlevel 1 (
+  echo [!] Photoshop is running.
+  echo     Quit Photoshop completely before installing, otherwise files stay locked.
+  echo.
+  if /i not "%~1"=="-y" (
+    choice /c YN /m "Continue anyway"
+    if errorlevel 2 exit /b 0
+  )
+)
+
+echo Installing PS Spark %VER% to:
+echo   %TARGET%
+echo.
+if /i not "%~1"=="-y" (
+  choice /c YN /m "Continue"
+  if errorlevel 2 exit /b 0
+)
+
+if not exist "%DST%" mkdir "%DST%"
+
+for %%D in (
+  com.psspark.ps.assistant_1.0.0
+  com.psspark.ps.assistant_1.6.0
+  com.psspark.ps.assistant_1.7.0
+) do (
+  if exist "%DST%\%%D" (
+    echo Removing old folder: %%D
+    rmdir /s /q "%DST%\%%D" 2>nul
+  )
+)
+
+for /d %%D in ("%DST%\com.psspark.*") do (
+  echo Removing leftover folder: %%~nxD
+  rmdir /s /q "%%~D" 2>nul
+)
+
+echo Copying files...
+xcopy /e /i /y /q "%SRC%" "%TARGET%" >nul
+if errorlevel 1 (
+  echo [x] Copy failed. Photoshop may still be running, or the folder is read-only.
+  echo     Quit Photoshop and try again, or copy com.psspark.ps.assistant_%VER% manually to:
+  echo     %DST%
+  echo.
+  pause
+  exit /b 1
+)
+
+echo.
+echo [OK] Installed to %TARGET%
+echo.
+echo Next two steps:
+echo   1. Photoshop - Edit - Preferences - Plug-ins: enable Developer Mode
+echo   2. Restart Photoshop, then open Plugins - PS Spark
+echo.
+pause
+`;
+
+function installNotesEn(ver, isDev, lang, date) {
+  const devBlock = isDev
+    ? `3. Developer workbench (this build only)
+  Settings > Developer (internal) > Enable developer mode > Open developer workbench
+  - Edit prompt segments, validate variables, dry-run, override localStorage
+  - This section exists only in dev builds; release and open-source builds strip it.
+`
+    : `3. This is a release build
+  The developer workbench is removed and the bundle is isolation-checked.
+`;
+
+  return `PS Spark ${ver} - Windows ${isDev ? "development build (developer workbench included)" : "release build"}
+Build date: ${date}
+Default UI language: English (Settings > Language switches to Chinese)
+
+[PS Spark is open source. If you paid for it, ask the seller for a refund.]
+Not an Adobe product. Licensed under AGPL-3.0 (see LICENSE).
+
+1. Install (either way)
+  A. Double-click
+    Run Install-Windows.bat and confirm.
+    It copies to %APPDATA%\\Adobe\\UXP\\Plugins\\External\\com.psspark.ps.assistant_${ver}
+    and removes older copies (com.psspark.ps.assistant_1.0.0 / com.psspark.*).
+
+  B. Manual
+    1) Copy the whole com.psspark.ps.assistant_${ver} folder to:
+       %APPDATA%\\Adobe\\UXP\\Plugins\\External\\
+       (type %APPDATA% in Explorer's address bar to get there)
+    2) Delete older copies first, otherwise two panels appear in the Plug-ins menu.
+
+2. Enable
+  1. Photoshop > Edit > Preferences > Plug-ins > Enable Developer Mode
+  2. Quit Photoshop completely, then reopen it
+  3. Plug-ins > PS Spark
+
+${devBlock}
+4. First run
+  - Settings > Image service: enter your API key (keys are per-machine; re-enter on Windows)
+  - Settings > Language: Chinese / English, kept after restart
+
+5. Local ComfyUI (optional)
+  - Double-click Start-ComfyUI.bat (localhost only)
+  - LAN access: Start-ComfyUI.bat -lan
+  - Another port: Start-ComfyUI.bat -port 8189
+  - Settings > Local ComfyUI > Add built-in template (text-to-image / reference / inpaint)
+
+6. Troubleshooting
+  Log:
+    %APPDATA%\\Adobe\\UXP\\PluginsStorage\\PHSP\\<PS major version>\\External\\com.psspark.ps.assistant\\PluginData\\psspark_debug.log
+    Example: ...\\PHSP\\26\\External\\com.psspark.ps.assistant\\PluginData\\psspark_debug.log
+  The Diagnostics section at the bottom of the panel shows recent lines.
+  When reporting, include: steps + matching log time range + screenshot.
+
+7. Uninstall
+  Delete %APPDATA%\\Adobe\\UXP\\Plugins\\External\\com.psspark.ps.assistant_${ver};
+  history and cache live under PluginsStorage - delete that folder too if needed.
+`;
+}
+
 function installNotes(ver, isDev, lang, date) {
   const devBlock = isDev
     ? `三、开发者工作台（本包特有）
@@ -250,8 +390,10 @@ async function main() {
     const p = path.join(ROOT, f);
     if (existsSync(p)) await copyFile(p, path.join(stage, f));
   }
-  await writeText(path.join(stage, "INSTALL-Windows.txt"), installNotes(ver, isDev, lang, date), true);
-  await writeText(path.join(stage, "Install-Windows.bat"), INSTALL_BAT.replace(/__VER__/g, ver), false);
+  const notes = lang === "en" ? installNotesEn(ver, isDev, lang, date) : installNotes(ver, isDev, lang, date);
+  const bat = (lang === "en" ? INSTALL_BAT_EN : INSTALL_BAT).replace(/__VER__/g, ver);
+  await writeText(path.join(stage, "INSTALL-Windows.txt"), notes, true);
+  await writeText(path.join(stage, "Install-Windows.bat"), bat, false);
 
   /* 3) 打包（文件名全 ASCII，避免 Windows 端解压乱码） */
   const outZip = path.join(DIST, folder + ".zip");
