@@ -37,7 +37,7 @@ PS Spark 是 Adobe Photoshop 的第三方插件（UXP）。它把云端图像模
 | **编辑** | 局部重绘（选区或整幅）、擦除 / 去水印、换色、内容修图（含改文字）、高清修复、老照片修复、人像精修、线稿上色、艺术融合、原位合成、图像融合 |
 | **结构** | 扩图（真实扩展画布，按百分比或像素）、抠图去背景（透明输出） |
 | **拆图** | 看图分析 → 可编辑的图层蓝图 → 逐层提取 → 合并为图层组 |
-| **本地模型** | ComfyUI 预设、4 条内置模板、一键适配本机实际安装的模型 |
+| **本地模型** | ComfyUI 预设、4 条起步模板；工作流按本机模型文件适配 |
 | **队列** | 云端 2 路并发、本地串行、按入队顺序落图、单条/全部取消、运行中追加 |
 | **历史** | 所有结果本地归档、可重新插入任意文档、缓存管理 |
 | **语言** | 中文 / English 运行时切换；开源构建默认英文 |
@@ -69,10 +69,6 @@ PS Spark 是 Adobe Photoshop 的第三方插件（UXP）。它把云端图像模
 **拆图产出的是可编辑图层，不是一张压平的图。** 视觉模型先给出图层蓝图，你可以改名字和
 描述，再逐层提取。元素层用纯色底抠像，颜色和光照取自原图像素；如果模型没有按要求给出
 纯色底，插件会明确提示，而不是塞给你一个看不见的空层。
-
-**本地模型不必每次重做工作流。** 内置模板会按本机实际存在的模型文件改写：子目录、
-反斜杠、量化档、大小写差异都能对上；本机没装 GGUF 自定义节点时自动换成标准加载器。
-提交前还会再校准一次，所以换机器通常不需要手动点适配。
 
 ## 环境要求
 
@@ -120,29 +116,15 @@ cp -R ps-spark ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
 
 ## 本地 ComfyUI（可选）
 
-先启动 ComfyUI（仓库里附了 `Start-ComfyUI.command` / `Start-ComfyUI.bat`），
-然后进入 **设置 ▸ 本地 ComfyUI**：
+支持本地模型，走 [ComfyUI](https://github.com/comfyanonymous/ComfyUI)，但不是开箱即用：
+需要自己按本机安装的模型文件适配工作流。
 
-1. **添加内置模板** — 内置四条：
+先启动 ComfyUI（仓库里附了 `Start-ComfyUI.command` / `Start-ComfyUI.bat`），再进入
+**设置 ▸ 本地 ComfyUI**：添加起步模板 → **适配本机模型** → **检测全部**，确认服务能跑哪些
+预设。其它架构在 ComfyUI 里导出 API 工作流（**Workflow ▸ Export (API)**），再导入 JSON。
 
-   | 模板 | 计算图 |
-   |---|---|
-   | Klein 4B · 文生图 | GGUF unet + CLIP + VAE → KSampler → VAE 解码 |
-   | Klein 4B · 参考图 | 同一套加载器，图生图（denoise） |
-   | Klein 4B · 局部重绘 | 同一套加载器，带蒙版的 latent |
-   | 通用 Checkpoint · 文生图 | `CheckpointLoaderSimple` → 正负 CLIP 编码 → 空 latent → KSampler |
-
-2. **适配本机模型** — 按本机实际文件名改写工作流：子目录、分隔符、量化档、大小写都会归一；
-   缺少 GGUF 节点时自动换成 `UNETLoader` / `CLIPLoader`，并补齐必填参数。匹配不唯一时
-   如实报告，绝不硬套。
-3. **检测全部** — 逐个预设核对运行中的服务，分别报告「缺模型文件」和「缺节点」。
-
-预设按底层模型分组：同一个模型即使有文生图、参考图、局部重绘三条工作流，模型下拉里也只
-显示一条。
-
-其它架构（Flux dev、Qwen-Image 等）需要各自的 API 工作流：在 ComfyUI 里
-**Workflow ▸ Export (API)** 导出 JSON，再在插件里「导入预设」。只勾选计算图真正支持的
-能力——给没有输入图节点的图勾上局部重绘，提交时必然失败。
+Windows 和 macOS 测试时用的本地模型不是同一套，所以在一台机器上能跑的预设，换到另一台
+可能需要重新适配；出图质量与速度取决于你安装的模型和硬件。
 
 ## 实现结构
 
@@ -212,7 +194,10 @@ tools/package-win.mjs  Windows 交付打包
 
 ## 参与贡献
 
-欢迎提交 Issue 与 Pull Request。提交前请确认：
+欢迎提交 Issue 与 Pull Request。有问题、Bug 或建议也可以直接发邮件到
+**psspark-feedback@hotmail.com**。
+
+提交前请确认：
 
 - 不含 API Key、令牌或本机个人路径；
 - 不含第三方受版权保护的文档、提示词或素材；
@@ -240,4 +225,4 @@ PS Spark 与 Adobe 无隶属、背书或认证关系。「Adobe」「Photoshop�
 
 ---
 
-Copyright (C) 2026 Cao · [English](README.md)
+Copyright (C) 2026 Cao · 反馈：psspark-feedback@hotmail.com · [English](README.md)

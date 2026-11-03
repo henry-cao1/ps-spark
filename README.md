@@ -38,7 +38,7 @@ nobody is allowed to charge you for this plugin.
 | **Edit** | Local redraw (selection or full canvas), erase / watermark removal, recolor, content retouch (including text), HD restore, old-photo restore, portrait retouch, line-art colorize, art fusion, in-place composite, image fusion |
 | **Structure** | Outpaint with real canvas expansion (percent or pixels), cutout with transparent output |
 | **Decompose** | Vision analysis → editable layer blueprint → per-layer extraction → layer group |
-| **Local models** | ComfyUI presets, 4 built-in templates, one-click adaptation to the models actually installed |
+| **Local models** | ComfyUI presets and 4 starter templates; the workflow is adapted to the model files on this machine |
 | **Queue** | Cloud jobs 2 at a time, local jobs serial, results land in queue order, cancel one or all, append while running |
 | **History** | Every result archived locally, re-insert into any document, cache management |
 | **Languages** | Chinese / English, switchable at runtime; open-source builds default to English |
@@ -76,12 +76,6 @@ layer blueprint; you edit names and descriptions; each layer is extracted separa
 layers are keyed against a flat background colour and then rebuilt from the original pixels,
 so colour and lighting match the source. If a model ignores the flat-background instruction,
 the plugin detects it and says so instead of producing an invisible layer.
-
-**Local models without re-authoring workflows every time.** Built-in templates are adapted to
-the model files actually present on the machine: subdirectories, backslashes, quantisation
-levels and case differences are matched; GGUF loaders fall back to standard loaders when the
-custom nodes are missing. Adaptation also runs before submission, so moving to another
-machine usually needs no manual step.
 
 ## Requirements
 
@@ -135,31 +129,17 @@ Quit and reopen Photoshop → **Plugins ▸ PS Spark**.
 
 ## Local ComfyUI (optional)
 
-Start ComfyUI (`Start-ComfyUI.command` / `Start-ComfyUI.bat` are included for convenience),
-then go to **Settings ▸ Local ComfyUI**:
+Local models are supported through [ComfyUI](https://github.com/comfyanonymous/ComfyUI), but they
+are not plug-and-play: you adapt the workflow to the model files installed on your machine.
 
-1. **Add built-in template** — four starting points are included:
+Start ComfyUI first (`Start-ComfyUI.command` / `Start-ComfyUI.bat` are included), then open
+**Settings ▸ Local ComfyUI**: add a starter template, run **Adapt local models**, and use
+**Probe all** to see which presets the server can actually run. For other architectures, export
+an API workflow from ComfyUI (**Workflow ▸ Export (API)**) and import the JSON.
 
-   | Template | Graph |
-   |---|---|
-   | Klein 4B · text to image | GGUF unet + CLIP + VAE → KSampler → VAE decode |
-   | Klein 4B · reference image | same stack, image-to-image with denoise |
-   | Klein 4B · inpaint | same stack, mask-based latent |
-   | Generic checkpoint · text to image | `CheckpointLoaderSimple` → CLIP encode ×2 → empty latent → KSampler |
-
-2. **Adapt local models** — rewrites the workflow to the files this machine actually has:
-   subdirectories, separators, quantisation and case are normalised; GGUF loaders are swapped
-   for `UNETLoader` / `CLIPLoader` when the custom nodes are absent, with required defaults
-   filled in. Ambiguous matches are reported, never guessed.
-3. **Probe all** — checks every preset against the running server and reports missing model
-   files or missing node classes separately.
-
-Presets are grouped by their underlying model, so the model dropdown shows one entry per model
-even when you keep separate text-to-image, reference and inpaint workflows.
-
-For any other architecture (Flux dev, Qwen-Image, …), export an API workflow from ComfyUI
-(**Workflow ▸ Export (API)**) and import the JSON. Mark only the capabilities the graph really
-supports — claiming inpainting for a graph without an image input will fail at submit time.
+The local models tested on Windows and on macOS are not the same set, so a preset that runs on
+one machine may need adapting on another. Output quality and speed depend on the models and
+hardware you install.
 
 ## How it works
 
@@ -236,7 +216,10 @@ progress.
 
 ## Contributing
 
-Issues and pull requests are welcome. Before submitting, make sure that:
+Issues and pull requests are welcome. Questions, bug reports and feature requests can also go
+to **psspark-feedback@hotmail.com**.
+
+Before submitting, make sure that:
 
 - no API keys, tokens or personal paths are included;
 - no third-party copyrighted documents, prompts or assets are added;
@@ -268,4 +251,4 @@ you use.
 
 ---
 
-Copyright (C) 2026 Cao · [中文说明](README.zh-CN.md)
+Copyright (C) 2026 Cao · Feedback: psspark-feedback@hotmail.com · [中文说明](README.zh-CN.md)
