@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #2b2b2b; --panel: #383838; --panel2: #24242a; --border: #4a4a4a;
+    --text: #e8e8e8; --dim: #9a9a9a; --accent: #7c4dff; --accent-hover: #9166ff;
+    --ok: #4caf50; --err: #ef5350;
+    --r: 6px;             /* 统一圆角 */
+    --sp: 8px;            /* 统一左右留白 */
+    --pad: 8px;           /* 卡片/分区内边距 */
+    --sbw: 0px;           /* 右侧滚动条实际占位（启动时测量） */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    /* 跨平台字体栈：macOS 用 SF，Windows 用 Segoe UI + 微软雅黑（缺失时逐级回退，不会变成宋体） */
+    font: 12px/1.5 -apple-system, "SF Pro Text", "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column;
+    position: relative;
+    user-select: none; overflow: hidden;
+  }
+  /* 顶栏：4 Tab + 右上角设置齿轮 */
+  /* 不用 flex gap（UXP 对 gap 支持不稳，实测会失效导致 5 项粘成一条），改用相邻 margin 兜底 */
+  #topbar { display: flex; align-items: stretch; padding: 8px calc(var(--pad) + var(--sbw)) 0 var(--pad); flex-shrink: 0; }
+  /* 顶栏 5 项等宽：4 个 Tab 与 ⚙ 设置按钮各占 1/5（flex-basis:0 均分） */
+  #topbar > * { flex: 1 1 0%; min-width: 0; }
+  #topbar > * + * { margin-left: 6px; }
+  .tab {
+    display: flex; align-items: center; justify-content: center; min-width: 0;
+    height: 32px; cursor: pointer; border-radius: var(--r);
+    background: var(--panel); border: 1px solid var(--border); color: var(--dim);
+    font: inherit;
+  }
+  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  /* 齿轮与 Tab 同元素类型（div.tab）：UXP 里 <button> 不认 flex-basis、自带内边距，
+     会变成"更窄更高"，与 Tab 对齐不上 */
+  #btnSettings {
+    padding: 0; border-radius: var(--r); cursor: pointer; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel); border: 1px solid var(--border); color: var(--dim);
+    font-size: 15px; line-height: 1;
+  }
+  #btnSettings:hover { color: var(--text); }
+  /* 开源提示条：常驻、一行、可点（有仓库地址时跳转） */
+  #ossTip {
+    margin: 4px calc(var(--pad) + var(--sbw)) 0 var(--pad); padding: 3px 8px; border-radius: var(--r);
+    background: rgba(255,183,77,.10); border: 1px solid rgba(255,183,77,.35);
+    color: #ffb74d; font-size: 10px; line-height: 1.4; text-align: center;
+    flex-shrink: 0; cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #ossTip:hover { background: rgba(255,183,77,.18); }
+  #btnSettings.alert::after {
+    content: ""; position: absolute; top: 4px; right: 4px;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--err);
+  }
+  /* 主视图 */
+  /* overflow-y:scroll 不是笔误：始终预留滚动条槽位，否则「会滚的页」
+     会比「不滚的页」窄一条滚动条，切页时左右边线跟着跳 */
+  #main { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px var(--pad); position: relative; }
+  .view.hidden { display: none; }
+  .placeholder {
+    border: 1px dashed var(--border); border-radius: var(--r);
+    padding: 14px 10px; color: var(--dim); font-size: 11px; line-height: 1.9;
+  }
+  .placeholder b { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; font-size: 12px; }
+  /* 底部：进度 + 折叠日志条 */
+  #bottom { padding: 0 calc(var(--pad) + var(--sbw)) 8px var(--pad); flex-shrink: 0; }
+  #progressWrap { display: none !important; /* 合并进底部状态行 */
+    margin-top: 6px; padding: 6px 8px; border-radius: var(--r);
+    background: var(--panel2); border: 1px solid var(--border);
+    color: var(--accent-hover); font-size: 11px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .spin { display: inline-block; animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  #logBar {
+    margin-top: 6px; padding: 5px 8px; border-radius: var(--r); cursor: pointer;
+    background: var(--panel); border: 1px solid var(--border);
+    color: var(--dim); font-size: 11px; display: flex; align-items: center; gap: 6px;
+  }
+  #logBar .chev { margin-left: auto; transition: transform .15s; }
+  #logBar.open .chev { transform: rotate(90deg); }
+  #statusDot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); flex: none; }
+  #statusDot.ok { background: var(--ok); }
+  #statusDot.err { background: var(--err); }
+  #log {
+    margin-top: 4px; background: #222; border: 1px solid var(--border); border-radius: var(--r);
+    padding: 6px 8px; height: 130px; overflow-y: auto; font-size: 11px; color: var(--dim);
+    white-space: pre-wrap; word-break: break-all; user-select: text;
+    position: relative;
+  }
+  #log .ok { color: var(--ok); }
+  #log .err { color: var(--err); }
+  /* 滚动条策略：使用 UXP 系统原生滚动条（稳定可见、可拖动）。
+     注：UXP 不派发 wheel 事件，内容区拖拽等滚动辅助由 app.js 提供 */
+  .hidden { display: none !important; }
+  /* 设置覆盖层（全屏替换式，返回即达） */
+  #settingsOverlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg); z-index: 20;
+    display: flex; flex-direction: column;
+  }
+  /* 设置层打开期间让底层内容不参与绘制：UXP 对绝对定位覆盖层的重绘不可靠，
+     底层视图的局部更新会穿透绘制到覆盖层上（实测鬼影/重叠）。隐藏后即使底层
+     被重绘也不会显示；关闭设置时统一重渲染底层，保证内容是最新的。 */
+  body.settings-open #topbar,
+  body.settings-open #main,
+  body.settings-open #bottom { visibility: hidden; }
+  /* 二次确认层：与设置层同一套策略（UXP 覆盖层重绘不可靠，底层必须不绘制） */
+  #confirmOverlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: var(--bg); z-index: 30;
+    display: flex; flex-direction: column;
+  }
+  body.confirm-open #topbar,
+  body.confirm-open #main,
+  body.confirm-open #bottom { visibility: hidden; }
+  .confirm-body { flex: 1; min-height: 0; overflow-y: scroll; padding: 14px var(--pad); }
+  .confirm-card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 12px;
+  }
+  .confirm-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #ffb74d; }
+  .confirm-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+  .confirm-actions { display: flex; margin-top: 14px; }
+  .confirm-actions > button {
+    flex: 1 1 0%; min-width: 0; padding: 7px 10px; border-radius: var(--r);
+    border: 1px solid var(--border); background: var(--panel2); color: var(--text);
+    font: inherit; cursor: pointer;
+  }
+  .confirm-actions > button + button { margin-left: 8px; }
+  .confirm-actions > button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .overlay-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .overlay-head button {
+    padding: 4px 10px; border-radius: var(--r); border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer; font: inherit;
+  }
+  .overlay-head .t { font-weight: 600; }
+  .overlay-body { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px var(--pad); position: relative; }
+  fieldset { border: 1px solid var(--border); border-radius: var(--r); padding: 8px; margin-bottom: 10px; }
+  legend { color: var(--dim); font-size: 12px; padding: 0 4px; }
+  .dim-note { color: var(--dim); font-size: 11px; line-height: 1.5; white-space: normal; word-break: break-word; }
+  .warn-note { color: var(--warn, #e8a33d); }
+  .warn-note:empty { display: none; }
+  /* 设置中心表单（W1） */
+  label { display: block; color: var(--dim); font-size: 11px; margin: 8px 0 3px; }
+  input[type=text], input[type=password], select {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--r); padding: 5px 6px;
+    font: inherit; outline: none; user-select: text;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--text); font-size: 12px; cursor: pointer; }
+  .check input { accent-color: var(--accent); }
+  .btnRow { display: flex; margin-top: 10px; }
+  .btnRow > * + * { margin-left: 6px; }
+  .btnRow button {
+    flex: 1 1 0; min-width: 0; height: 28px; padding: 0 8px; border-radius: var(--r); border: none; cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600;
+  }
+  .btnRow button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
+  .btnRow button:disabled { opacity: .45; cursor: default; }
+  .status-line { margin-top: 8px; font-size: 11px; color: var(--dim); min-height: 16px; word-break: break-all; }
+  .status-line.ok { color: var(--ok); }
+  .status-line.err { color: var(--err); }
+  .row2 { display: flex; gap: 8px; }
+  .row2 > div { flex: 1; }
+  /* ============ W2：注册表驱动组件（分段控件 / chips / 卡片 / 槽 / 运行条 / 结果块） ============ */
+  .inst-desc { color: var(--dim); font-size: 11px; line-height: 1.6; margin-bottom: 2px; }
+  .seg { display: flex; background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+  .seg-item { flex: 1; text-align: center; padding: 6px 0; font-size: 11px; color: var(--dim); cursor: pointer; }
+  .seg-item + .seg-item { border-left: 1px solid var(--border); }
+  .seg-item.active { background: var(--accent); color: #fff; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  #view-edit .chips { margin-top: 8px; }
+  .chip { padding: 4px 10px; border-radius: var(--r); font-size: 11px; background: var(--panel); border: 1px solid var(--border); color: var(--dim); cursor: pointer; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .card { border: 1px solid var(--border); border-radius: var(--r); padding: var(--pad); margin-top: var(--pad); }
+  .card-title { font-size: 12px; color: var(--dim); margin-bottom: 6px; }
+  .slot-row { display: flex; align-items: center; padding: 4px 0; }
+  .slot-row > * + * { margin-left: 8px; }
+  .slot-role { width: 48px; flex: none; color: var(--dim); font-size: 11px; }
+  .slot-note { color: var(--dim); font-size: 11px; flex: 1; line-height: 1.5; }
+  .slot-thumbs { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; align-items: center; }
+  .slot-thumb { position: relative; width: 34px; height: 34px; border-radius: var(--r); border: 1px solid var(--border); overflow: hidden; background: var(--panel2); flex: none; }
+  .slot-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .slot-thumb .rm { position: absolute; top: 0; right: 0; width: 14px; height: 14px; line-height: 13px; text-align: center; border-radius: 0 0 0 var(--r); background: rgba(0,0,0,.55); color: #fff; font-size: 11px; cursor: pointer; }
+  .slot-add { padding: 3px 8px; font-size: 11px; border-radius: var(--r); border: 1px dashed var(--border); background: transparent; color: var(--dim); cursor: pointer; flex: none; }
+  .slot-add:hover { color: var(--text); border-color: var(--dim); }
+  textarea {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--r); padding: 6px;
+    font: inherit; outline: none; user-select: text; resize: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  /* 文本域显式高度（UXP 中 rows 属性不可靠，会被压成一行高）；实际高度由 autoGrowTa 按内容内联覆盖 */
+  .ta-prompt { height: 116px; }
+  .ta-supp { height: 64px; }
+  .ta-tpl { height: 116px; }
+  .prompt-tools { display: flex; justify-content: flex-end; margin-top: 4px; }
+  .p-btn { background: transparent; border: 1px solid var(--border); color: var(--dim); border-radius: var(--r); font-size: 11px; padding: 2px 6px; cursor: pointer; font: inherit; font-size: 11px; }
+  .p-btn:hover { color: var(--text); border-color: var(--dim); }
+  .p-btn:disabled { opacity: .45; cursor: default; }
+  /* 提示词助手（内联工具槽） */
+  .assist { margin-top: 2px; }
+  .assist-panel { margin-top: 6px; padding: 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel2); }
+  .assist-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .assist-chip { padding: 3px 9px; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .assist-chip:hover { border-color: var(--accent); }
+  .assist-chip:disabled { opacity: .45; cursor: default; }
+  .assist-status { margin-top: 6px; font-size: 11px; color: var(--dim); line-height: 1.5; }
+  .assist-status.warn { color: #ffb74d; }
+  .assist-status.err { color: var(--err); }
+  .assist-status.ok { color: var(--ok); }
+  .assist-result { margin-top: 6px; height: 150px; }
+  .assist-ops { display: flex; gap: 6px; margin-top: 6px; }
+  .assist-ops .p-btn { flex: 1; padding: 5px 0; }
+  .fold-head { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--dim); font-size: 11px; padding: 2px 0; }
+  .fold-head .chev { transition: transform .15s; }
+  .fold-head.open .chev { transform: rotate(90deg); }
+  .fold-body { margin-top: 6px; }
+  .prow { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+  .prow > label { margin: 0; width: 56px; flex: none; align-self: flex-start; padding-top: 5px; }
+  .prow > label.chk { width: auto; align-self: center; padding-top: 0; }
+  .prow > .dd, .prow > input[type=text] { flex: 1; min-width: 80px; }
+  .mini-box { display: flex; align-items: center; gap: 3px; flex: none; }
+  .mini-lab { color: var(--dim); font-size: 11px; }
+  .prow .mini { width: 44px; text-align: center; padding: 4px 2px; }
+  .prow .swatch { width: 18px; height: 18px; border-radius: var(--r); border: 1px solid var(--border); flex: none; }
+  .prow .chk { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; cursor: pointer; }
+  /* ============ 自绘下拉选择（替代原生 select；UXP 原生 select 在滚动容器内会残留残影） ============ */
+  .dd { position: relative; }
+  .dd-btn {
+    width: 100%; display: flex; align-items: center; justify-content: flex-start;
+    /* UXP 会忽略 <button> 上的 text-align（默认居中），所以左对齐要靠 justify-content
+       和 .dd-val 自身的 text-align 双保险；也不要用 gap（UXP 不稳） */
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--r); padding: 5px 8px;
+    font: inherit; cursor: pointer; text-align: left; min-height: 26px;
+  }
+  .dd-btn:hover { border-color: var(--dim); }
+  .dd-btn:disabled { opacity: .5; cursor: default; }
+  .dd-btn:disabled:hover { border-color: var(--border); }
+  .dd-val {
+    display: block; flex: 1 1 auto; min-width: 0; text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dd-chev { margin-left: 6px; color: var(--dim); font-size: 10px; flex: none; }
+  /* 菜单在文档流内展开（展开时把下方内容顺势推开）：
+     UXP 对"绝对定位浮层"的渲染重绘不可靠（曾出现原生 select 残影、自绘浮层与下行内容重合错位），
+     流内展开彻底规避浮层类渲染问题 */
+  .dd-menu {
+    margin-top: 3px;
+    background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r);
+    max-height: 260px; overflow-y: auto; /* 长列表（如 1–4K 尺寸档）在菜单内滚动 */
+  }
+  .dd-item { padding: 6px 8px; font-size: 12px; color: var(--text); cursor: pointer; }
+  .dd-item:hover { background: var(--panel); }
+  .dd-item.active { color: var(--accent-hover); }
+  .dd-item.off { opacity: .42; cursor: default; }
+  .dd-item.off:hover { background: transparent; }
+  .dd-head { padding: 6px 8px 2px; font-size: 10px; color: var(--dim); border-top: 1px solid var(--border); margin-top: 2px; }
+  .dd-head:first-child { border-top: none; margin-top: 0; padding-top: 4px; }
+  /* 本地预设：能力勾选 / 三列参数 / 折叠高级区 */
+  .cap-row { display: flex; flex-wrap: wrap; margin: 2px 0 2px; }
+  .cap-row label {
+    display: flex; align-items: center; width: auto; margin: 0 12px 4px 0;
+    font-size: 11px; color: var(--text); cursor: pointer;
+  }
+  .cap-row input[type=checkbox] { margin-right: 4px; }
+  .row3 { display: flex; margin-top: 4px; }
+  .row3 > div { flex: 1; min-width: 0; margin-right: 6px; }
+  .row3 > div:last-child { margin-right: 0; }
+  .row3 input.mini { width: 100%; text-align: center; }
+  .adv { margin-top: 8px; }
+  .adv summary { font-size: 11px; color: var(--dim); cursor: pointer; padding: 2px 0; }
+  .adv summary:hover { color: var(--text); }
+  .adv[open] summary { color: var(--accent-hover); }
+
+  /* ComfyUI 工作流输入 */
+  fieldset textarea { width: 100%; min-height: 96px; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 6px 8px; font: 11px/1.5 ui-monospace, Menlo, monospace; outline: none; user-select: text; }
+  fieldset textarea:focus { border-color: var(--accent); }
+  .run-wrap { margin-top: 12px; }
+  .runbar { display: flex; gap: 8px; }
+  .run-btn { flex: 1; padding: 8px 0; border: none; border-radius: var(--r); background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  .run-btn:disabled { opacity: .45; cursor: default; }
+  .run-cancel { display: none; padding: 8px 14px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; }
+  .run-meta { display: flex; gap: 6px; margin-top: 6px; }
+  .cost-badge, .model-tag { font-size: 11px; color: var(--dim); border: 1px solid var(--border); border-radius: var(--r); padding: 1px 8px; }
+  .model-tag { cursor: pointer; }
+  .model-tag:hover { color: var(--text); }
+  .rb-hint { margin-top: 6px; font-size: 11px; color: var(--dim); min-height: 14px; }
+  .rb-hint.warn { color: #ffb74d; }
+  .rb-ctx { margin-top: 2px; font-size: 11px; color: var(--dim); min-height: 14px; }
+  .result-block { border: 1px dashed var(--border); border-radius: var(--r); padding: 8px; margin-top: 12px; }
+  .rb-title { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  .rb-status { font-size: 11px; color: var(--dim); }
+  .rb-status.ok { color: var(--ok); }
+  .rb-status.err { color: var(--err); }
+  .rb-body { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; }
+  .rb-thumbs { display: flex; gap: 10px; flex: none; }
+  .rb-cell { text-align: center; }
+  .rb-cap { font-size: 10px; color: var(--dim); margin-top: 2px; }
+  .rb-thumb { width: 44px; height: 44px; border-radius: var(--r); border: 1px solid var(--border); object-fit: cover; background: var(--panel2); display: block; }
+  /* 候选结果网格（1~N 张）：多候选时每张可单独插入 */
+  .rb-cands { display: flex; gap: 8px; flex-wrap: wrap; }
+  .rb-pick { width: 100%; margin-top: 3px; padding: 2px 0; font-size: 10px; line-height: 1.5; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font-family: inherit; }
+  .rb-pick:hover { border-color: var(--accent); }
+  .rb-pick.done { color: var(--ok); border-color: var(--ok); }
+  .rb-pick:disabled { cursor: default; }
+  .rb-meta { font-size: 11px; color: var(--dim); flex: 1; word-break: break-all; }
+  .rb-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .rb-actions button { flex: 1 1 44%; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .rb-actions button:disabled { opacity: .45; cursor: default; }
+  .rb-actions button.rb-del { color: #ffb74d; }
+  /* ============ W6：历史域 ============ */
+  .hj-card { border: 1px solid var(--border); border-radius: var(--r); padding: var(--pad); margin-top: var(--pad); position: relative; }
+  .hj-top { display: flex; gap: 8px; align-items: flex-start; }
+  .hj-thumb { width: 52px; height: 52px; border-radius: var(--r); border: 1px solid var(--border); object-fit: cover; background: var(--panel2); flex: none; display: block; }
+  .hj-thumb.hj-noimg { opacity: .35; }
+  .hj-info { flex: 1; min-width: 0; }
+  .hj-name { font-size: 12px; word-break: break-all; }
+  .hj-meta { font-size: 11px; color: var(--dim); margin-top: 2px; word-break: break-all; line-height: 1.5; }
+  .hj-state { display: flex; gap: 5px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+  .hj-badge { font-size: 10px; line-height: 16px; border-radius: var(--r); padding: 0 6px; border: 1px solid var(--border); color: var(--dim); }
+  .hj-badge.ok { color: var(--ok); border-color: var(--ok); }
+  .hj-badge.err { color: var(--err); border-color: var(--err); }
+  .hj-badge.fav { color: #ffb74d; border-color: #ffb74d; }
+  #view-history .prow { margin-top: var(--pad); }
+  .hj-empty {
+    margin-top: var(--pad); padding: 10px;
+    border: 1px dashed var(--border); border-radius: var(--r);
+    color: var(--dim); font-size: 11px; line-height: 1.7; text-align: center;
+  }
+  .hj-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .hj-actions button { flex: 1 1 44%; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .hj-actions button:disabled { opacity: .45; cursor: default; }
+  /* UXP 对 :disabled 伪类支持不稳：状态同时挂 class，样式不依赖伪类 */
+  .hj-actions button.is-dis { opacity: .45; cursor: default; border-style: dashed; }
+  .hj-actions button.hj-del { color: #ffb74d; }
+  /* 历史卡片的说明浮层（UXP 里 title 属性不弹 tooltip，自己画一个） */
+  .hj-tip {
+    position: absolute; left: var(--pad); right: var(--pad); z-index: 30;
+    padding: 6px 8px; margin-top: 4px;
+    font-size: 11px; line-height: 1.6; color: var(--text);
+    background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .3);
+  }
+  .hj-tip.hidden { display: none; }
+  .hj-empty { color: var(--dim); font-size: 11px; padding: 12px 4px; line-height: 1.7; }
+  /* ============ v1.2：拆图向导 ============ */
+  .dc-steps { display: flex; margin-bottom: var(--pad); }
+  .dc-steps > * + * { margin-left: 6px; }
+  .dc-step { text-align: center; flex: 1; text-align: center; padding: 5px 0; font-size: 11px; color: var(--dim); background: var(--panel2); border: 1px solid var(--border); border-radius: var(--r); }
+  .dc-step.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .dc-step.done { color: var(--ok); border-color: var(--ok); }
+  .dc-card { border: 1px solid var(--border); border-radius: var(--r); padding: var(--pad); margin-top: var(--pad); }
+  .dc-layer { display: flex; align-items: flex-start; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--panel2); }
+  .dc-layer:last-child { border-bottom: none; }
+  .dc-layer input[type=checkbox] { accent-color: var(--accent); margin-top: 3px; flex: none; }
+  .dc-layer-info { flex: 1; min-width: 0; }
+  .dc-layer-name { font-size: 12px; }
+  .dc-layer-p { font-size: 11px; color: var(--dim); word-break: break-all; line-height: 1.5; margin-top: 2px; }
+  .dc-badge { font-size: 10px; color: var(--dim); border: 1px solid var(--border); border-radius: var(--r); padding: 0 6px; flex: none; }
+  .dc-count { font-size: 11px; color: #ffb74d; margin-top: 8px; }
+  .dc-status { font-size: 11px; color: var(--dim); margin-top: 6px; line-height: 1.6; word-break: break-all; }
+  .dc-status.ok { color: var(--ok); }
+  .dc-status.err { color: var(--err); }
+  .dc-run-status { flex: none; font-size: 11px; margin-top: 2px; }
+  .dc-run-status.ok { color: var(--ok); }
+  .dc-run-status.err { color: var(--err); }
+  .dc-run-status.run { color: var(--accent-hover); }
+  .dc-toolbar { display: flex; gap: 6px; margin-top: 8px; }
+  .dc-toolbar button { flex: 1; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .dc-toolbar button:disabled { opacity: .45; cursor: default; }
+  /* 分析画面预览（明确"发给模型的是哪张图"） */
+  .dc-preview { margin-top: 8px; border: 1px dashed var(--border); border-radius: var(--r); padding: 6px; text-align: center; }
+  .dc-preview img { max-width: 100%; max-height: 160px; display: block; margin: 0 auto 4px auto; border-radius: var(--r); }
+  .dc-preview-cap { font-size: 11px; color: var(--dim); line-height: 1.5; word-break: break-all; }
+  .dc-name-in { width: 100%; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 3px 6px; font: inherit; font-size: 12px; outline: none; }
+  .dc-name-in:focus { border-color: var(--accent); }
+  .dc-prompt-ta { width: 100%; margin-top: 4px; height: 46px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 4px 6px; font: inherit; font-size: 11px; resize: none; outline: none; }
+  .dc-prompt-ta:focus { border-color: var(--accent); }
+  .dc-rm { flex: none; width: 20px; height: 20px; line-height: 0; text-align: center; border-radius: var(--r); border: 1px solid var(--border); background: transparent; color: #ffb74d; cursor: pointer; padding: 0; font-size: 13px; }
+  .dc-rm:hover { border-color: #ffb74d; }
+  /* 蓝图行：名称行（输入框 + 详细描述折叠按钮） */
+  .dc-row1 { display: flex; align-items: center; gap: 6px; }
+  .dc-row1 .dc-name-in { flex: 1; min-width: 0; }
+  .dc-toggle { flex: none; width: 22px; height: 22px; line-height: 0; text-align: center; border-radius: var(--r); border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; padding: 0; font-size: 10px; }
+  /* 蓝图层级顺序调整（上移/下移） */
+  .dc-mv { flex: none; width: 22px; height: 22px; line-height: 0; text-align: center; border-radius: var(--r); border: 1px solid var(--border); background: transparent; color: var(--dim); cursor: pointer; padding: 0; font-size: 11px; }
+  .dc-mv:hover { border-color: var(--accent); color: var(--text); }
+  .dc-toggle:hover { border-color: var(--accent); color: var(--text); }
+  .dc-toggle.open { border-color: var(--accent); color: var(--text); }
+  .dc-bg-note { font-size: 11px; color: var(--dim); line-height: 1.6; margin-top: 4px; }
+  .dc-empty { color: var(--dim); font-size: 11px; padding: 10px 2px; line-height: 1.7; }
+  /* ============ 结果查看器（对比 / 缩放 / 局部重做） ============ */
+  #imgPreview {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(14,14,16,.97); z-index: 30;
+    display: flex; flex-direction: column;
+  }
+  .pv-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .pv-cap { flex: 1; min-width: 0; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pv-head button { padding: 3px 8px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 11px; }
+  .pv-seg { display: flex; gap: 2px; background: var(--panel2); border-radius: var(--r); padding: 2px; flex-shrink: 0; }
+  .pv-seg button { padding: 2px 7px; border: none; border-radius: var(--r); background: transparent; color: var(--dim); }
+  .pv-seg button.on { background: var(--accent); color: #fff; }
+  .pv-zoom { display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--dim); flex-shrink: 0; }
+  .pv-zoom button { padding: 1px 6px; }
+  .pv-body { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
+  .pv-stage { position: relative; display: flex; gap: 8px; align-items: flex-start; }
+  .pv-stage.mode-slide { display: block; }
+  .pv-stage.mode-slide .pv-frame { position: absolute; left: 0; top: 0; }
+  .pv-frame { position: relative; flex: none; background: #111; border-radius: var(--r); overflow: hidden; }
+  .pv-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  .pv-divider { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); cursor: ew-resize; z-index: 2; }
+  .pv-divider::after { content: ""; position: absolute; top: 50%; left: -5px; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; background: var(--accent); }
+  .pv-sel { position: absolute; border: 1px dashed var(--accent); background: rgba(124,77,255,.18); pointer-events: none; z-index: 3; }
+  .pv-foot { flex-shrink: 0; border-top: 1px solid var(--border); padding: 6px 8px; display: flex; flex-direction: column; gap: 5px; }
+  .pv-thumbs { display: flex; gap: 6px; overflow-x: auto; }
+  .pv-thumb { width: 42px; height: 42px; object-fit: cover; border-radius: var(--r); border: 1px solid var(--border); cursor: pointer; flex: none; }
+  .pv-thumb.on { border-color: var(--accent); }
+  .pv-redo { display: flex; gap: 6px; align-items: center; }
+  .pv-redo input { flex: 1; min-width: 0; padding: 4px 6px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 11px; outline: none; }
+  .pv-redo button { padding: 4px 9px; border-radius: var(--r); border: none; background: var(--accent); color: #fff; font: inherit; font-size: 11px; cursor: pointer; }
+  .pv-redo button:disabled { opacity: .45; cursor: default; }
+  .pv-hint { font-size: 10px; color: var(--dim); line-height: 1.6; }
+  body.preview-open #topbar,
+  body.preview-open #nlBar,
+  body.preview-open #main,
+  body.preview-open #bottom { visibility: hidden; }
+  /* ============ 任务队列（生图连点不丢） ============ */
+  #queueWrap {
+    margin: 0 calc(var(--pad) + var(--sbw)) 6px var(--pad); flex-shrink: 0;
+    border: 1px solid var(--border); border-radius: var(--r); background: var(--panel2);
+  }
+  #queueHead {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 8px; border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--dim);
+  }
+  #queueSummary { flex: 1 1 auto; min-width: 0; }
+  .q-ops button {
+    height: 20px; padding: 0 7px; margin-left: 6px; border-radius: var(--r);
+    border: 1px solid var(--border); background: var(--panel); color: var(--dim);
+    font: inherit; font-size: 10px; cursor: pointer;
+  }
+  .q-ops button:hover { color: var(--text); border-color: var(--dim); }
+  #queueWrap.collapsed #queueList { display: none; }
+  #queueHead { cursor: pointer; }
+  .accent-btn {
+    border-color: var(--accent) !important; color: var(--accent-hover) !important;
+    background: rgba(124,92,255,.12) !important;
+  }
+  #statusDot.spin { width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--dim); border-top-color: var(--accent); animation: qspin .8s linear infinite; background: transparent !important; }
+  @keyframes qspin { to { transform: rotate(360deg); } }
+  /* 设置分区整体折叠 */
+  .sec-legend { cursor: pointer; }
+  .sec-legend::after { content: "  ▾"; font-size: 10px; color: var(--dim); }
+  fieldset.sec-collapsed .sec-legend::after { content: "  ▸"; }
+  fieldset.sec-collapsed .sec-body { display: none; }
+  fieldset.sec-collapsed { margin-bottom: 12px; }
+  #btnComfyDel.armed { border-color: var(--err) !important; color: var(--err) !important; }
+  .q-caret { display: inline-block; width: 10px; color: var(--dim); margin-right: 4px; }
+  #queueList { max-height: 108px; overflow-y: auto; }
+  .q-row { display: flex; align-items: center; padding: 4px 8px; border-top: 1px solid rgba(255,255,255,.04); }
+  .q-row:first-child { border-top: none; }
+  .q-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); flex: none; margin-right: 7px; }
+  .q-row.run .q-dot { background: var(--accent); }
+  .q-row.ok .q-dot { background: var(--ok); }
+  .q-row.err .q-dot { background: var(--err); }
+  .q-row.cancel .q-dot { background: #777; }
+  .q-main { flex: 1 1 auto; min-width: 0; }
+  .q-title { font-size: 11px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .q-row.cancel .q-title { color: var(--dim); }
+  .q-sub { font-size: 10px; color: var(--dim); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .q-state { font-size: 10px; color: var(--dim); flex: none; margin-left: 6px; }
+  .q-row.run .q-state { color: var(--accent-hover); }
+  .q-row.ok .q-state { color: var(--ok); }
+  .q-row.err .q-state { color: var(--err); }
+  .q-x {
+    flex: none; width: 18px; height: 18px; margin-left: 4px; padding: 0;
+    border-radius: var(--r); border: 1px solid var(--border); background: transparent;
+    color: var(--dim); font: inherit; font-size: 12px; line-height: 1; cursor: pointer;
+  }
+  .q-x:hover { color: var(--err); border-color: var(--err); }
+  .q-more { padding: 3px 8px 4px; font-size: 10px; color: var(--dim); }
+  /* ============ 历史：多候选逐张小图 ============ */
+  .hj-cands { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .hj-cand { position: relative; width: 76px; }
+  .hj-cand-img { width: 76px; height: 76px; object-fit: cover; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel2); display: block; cursor: pointer; }
+  .hj-cand-ins { position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; line-height: 15px; text-align: center; border-radius: var(--r); background: rgba(0,0,0,.6); color: #fff; font-size: 11px; cursor: pointer; }
+  .hj-cand-ins:hover { background: var(--accent); }
+  .hj-cand-cap { font-size: 10px; color: var(--dim); text-align: center; margin-top: 2px; }
+  /* ============ 设置 ▸ 功能说明 ============ */
+  .help-group { font-size: 11px; color: var(--accent-hover); font-weight: 600; margin-top: 12px; }
+  .help-group:first-child { margin-top: 0; }
+  .help-master { margin-top: 8px; }
+  .help-master button { height: 24px; padding: 0 9px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel2); color: var(--dim); font: inherit; font-size: 10px; cursor: pointer; }
+  .help-master button:hover { color: var(--accent-hover); border-color: var(--accent); }
+  #helpList.collapsed .help-body { display: none; }
+  .help-item { border: 1px solid var(--border); border-radius: var(--r); padding: 8px; margin-top: 8px; }
+  .help-head { display: flex; align-items: flex-start; gap: 6px; }
+  .help-head-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .help-name { font-size: 12px; font-weight: 600; }
+  .help-chip { font-size: 10px; color: var(--dim); border: 1px solid var(--border); border-radius: var(--r); padding: 0 6px; }
+  .help-desc { font-size: 11px; color: var(--text); margin-top: 4px; line-height: 1.6; }
+  .help-how { font-size: 11px; color: var(--dim); margin-top: 3px; line-height: 1.6; }
+  /* ============ 自然语言指令入口（一句话 → 自动定位功能） ============ */
+  #nlBar { padding: 6px 8px 0 8px; flex-shrink: 0; }
+  #nlToggle {
+    width: 100%; display: flex; align-items: center; justify-content: flex-start; gap: 6px;
+    background: var(--panel2); border: 1px dashed var(--border); color: var(--dim);
+    border-radius: var(--r); padding: 5px 8px; font: inherit; font-size: 11px; cursor: pointer; text-align: left;
+  }
+  #nlToggle:hover { color: var(--text); border-color: var(--accent); }
+  #nlToggle.open { border-style: solid; border-color: var(--accent); color: var(--text); }
+  #nlPanel { margin-top: 6px; border: 1px solid var(--border); border-radius: var(--r); padding: 8px; background: var(--panel2); }
+  .ta-nl { height: 64px; }
+  .nl-ops { display: flex; gap: 6px; margin-top: 6px; }
+  .nl-ops button { flex: 1; padding: 6px 0; border-radius: var(--r); border: none; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; font-size: 12px; }
+  .nl-ops button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
+  .nl-ops button:disabled { opacity: .45; cursor: default; }
+  .nl-status { margin-top: 6px; font-size: 11px; color: var(--dim); min-height: 14px; line-height: 1.5; word-break: break-all; }
+  .nl-status.ok { color: var(--ok); }
+  .nl-status.err { color: var(--err); }
+  .nl-plan { margin-top: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel); font-size: 11px; line-height: 1.7; word-break: break-all; }
+  .nl-plan b { color: var(--accent-hover); }
+
+  /* 兜底：说明文字在窄面板里必须换行，不能被父容器裁掉 */
+  #main .dim-note, #settingsBody .dim-note, .param-card .dim-note {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+  }
+
+  /* 兜底：说明文字在窄面板里必须换行，不能被父容器裁掉 */
+  #main .dim-note, #settingsBody .dim-note, .param-card .dim-note {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: anywhere;
+    max-width: 100%;
+  }
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div class="tab active" data-tab="gen">生成</div>
+  <div class="tab" data-tab="edit">编辑</div>
+  <div class="tab" data-tab="decomp">拆图</div>
+  <div class="tab" data-tab="history">历史</div>
+  <div class="tab" id="btnSettings" role="button" title="设置（唯一配置入口）">⚙</div>
+</header>
+<div id="ossTip" title="点击查看开源地址">
+  <span id="ossTipText">本软件已开源，如购买请退款</span>
+</div>
+
+<div id="nlBar">
+  <button id="nlToggle" type="button" title="用一句话描述你想做的事，自动定位到对应功能并填好提示词（消耗 1 次文本请求）">✨ 一句话：说出你想做什么（自动定位功能）</button>
+  <div id="nlPanel" class="hidden">
+    <textarea id="nlInput" class="ta-nl" placeholder="例：把背景换成海边沙滩 / 去掉画面右侧的水印 / 把标题文字改成「夏日特惠」/ 把这张图拆成图层"></textarea>
+    <div class="nl-ops">
+      <button id="nlParse" type="button">解析并定位</button>
+      <button id="nlClose" type="button" class="secondary">收起</button>
+    </div>
+    <div id="nlStatus" class="nl-status"></div>
+    <div id="nlConfirm" class="hidden">
+      <div id="nlPlan" class="nl-plan"></div>
+      <div class="nl-ops">
+        <button id="nlApply" type="button">用此功能 →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<main id="main">
+  <section class="view" id="view-gen">
+    <div class="chips" id="genChips"></div>
+    <div class="host" id="genHost"></div>
+  </section>
+  <section class="view hidden" id="view-edit">
+    <div class="seg" id="editGroups"></div>
+    <div class="chips" id="editChips"></div>
+    <div class="host" id="editHost"></div>
+  </section>
+  <section class="view hidden" id="view-decomp">
+    <div class="dc-steps">
+      <div class="dc-step" id="dcStep1">① 描述</div>
+      <div class="dc-step" id="dcStep2">② 蓝图</div>
+      <div class="dc-step" id="dcStep3">③ 执行</div>
+    </div>
+    <div id="dcHost"></div>
+  </section>
+  <section class="view hidden" id="view-history">
+    <div class="chips" id="historyChips"></div>
+    <div class="prow" id="historyFilterRow"></div>
+    <div id="historyHost"></div>
+  </section>
+</main>
+
+<div id="queueWrap" class="hidden">
+  <div id="queueHead" title="点击展开/收起队列">
+    <span id="qCaret" class="q-caret">▸</span>
+    <span id="queueSummary">队列空闲</span>
+    <span class="q-ops">
+      <button id="btnQueueCancelAll" type="button">取消全部</button>
+      <button id="btnQueueClear" type="button">清空已完成</button>
+    </span>
+  </div>
+  <div id="queueList"></div>
+</div>
+
+<div id="bottom">
+  <div id="progressWrap" class="hidden"><span id="progressSpin">⏳</span><span id="progressText"></span></div>
+  <div id="logBar"><span id="statusDot"></span><span id="statusText">就绪</span><span class="chev">›</span></div>
+  <div id="log" class="hidden"></div>
+</div>
+
+<div id="settingsOverlay" class="hidden">
+  <div class="overlay-head">
+    <button id="btnSettingsBack">‹ 返回</button>
+    <span class="t">设置</span>
+  </div>
+  <div class="overlay-body" id="settingsBody">
+    <fieldset id="secLang">
+      <legend>语言 / Language</legend>
+      <label>界面语言 / Interface language</label>
+      <div id="langDD"></div>
+      <div class="status-line" id="langStatus">切换后立即生效，设置会保存在本机</div>
+    </fieldset>
+
+    <fieldset id="secImage">
+      <legend>服务接入 · 图像服务</legend>
+      <label>节点 / Base URL</label>
+      <div id="imgBaseUrl"></div>
+      <input type="text" id="imgBaseUrlCustom" class="hidden" placeholder="https://your-node.example.com" style="margin-top:4px">
+      <label>API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-xxxxxxxx（填写后自动保存到本机）" autocomplete="off">
+      <label>模型</label>
+      <div id="imgModel"></div>
+      <input type="text" id="imgModelCustom" class="hidden" placeholder="模型名（如 nano-banana-2）" style="margin-top:4px">
+      <div class="dim-note">尺寸 / 质量 / 分辨率随所选模型自动调整：gpt-image 系列走 OpenAI 兼容端点；nano-banana 系列走统一端点（比例出图 + 分辨率档）</div>
+      <div class="btnRow">
+        <button id="btnTestImage">测试连接</button>
+      </div>
+      <div class="status-line" id="imgStatus">未配置 · 点「测试连接」可零成本鉴别 Key 有效性</div>
+    </fieldset>
+
+    <fieldset id="secComfy">
+      <legend>本地 ComfyUI（一条工作流 · 可绑多台机器）</legend>
+      <label>模型预设</label>
+      <div id="comfyPresetDD"></div>
+      <div class="btnRow">
+        <button id="btnComfyAdd" class="secondary">新增</button>
+        <button id="btnComfyDup" class="secondary">复制</button>
+        <button id="btnComfyDel" class="secondary">删除</button>
+      </div>
+
+      <label>名称（显示在模型下拉里）</label>
+      <input type="text" id="comfyName" placeholder="例如 Klein 4B（本机）">
+
+      <label>主地址</label>
+      <input type="text" id="comfyUrl" placeholder="http://127.0.0.1:8188">
+      <label>其他机器地址（一行一个，可选）</label>
+      <textarea id="comfyUrlExtra" rows="2" placeholder="http://192.168.1.9:8188&#10;http://192.168.1.10:8188"></textarea>
+
+      <label>能力（决定它能出现在哪些功能里）</label>
+      <div class="cap-row" id="comfyCaps"></div>
+
+      <label>透明通道</label>
+      <div id="comfyAlpha"></div>
+      <div class="dim-note">拆图统一按「纯洋红底 + 抠色 + 原图像素重建」处理，不依赖这项声明；这里只作能力记录。</div>
+
+      <label>本地局部重绘方式</label>
+      <div id="comfyWhole"></div>
+      <div class="dim-note">模型能力较弱时，选「整图重绘 + 蒙版合成」：把选区向外扩大一圈后整张重绘（不依赖工作流的蒙版质量），再用蒙版把结果裁回选区，边缘按羽化过渡。</div>
+
+      <label>工作流 JSON（API 格式）</label>
+      <textarea id="comfyWorkflow" rows="5" placeholder="ComfyUI 里 Workflow ▸ Export (API) 导出，或点下面的「导入 JSON…」"></textarea>
+
+      <div class="btnRow">
+        <button id="btnImportComfy" class="secondary">导入 JSON…</button>
+        <button id="btnTestComfy">测试连接</button>
+        <button id="btnComfyProbeAll" class="secondary">检测全部</button>
+      </div>
+      <div class="status-line" id="comfyStatus">未测试</div>
+
+      <details class="adv">
+        <summary>高级：节点角色 / 采样参数</summary>
+        <label>PROMPT 节点 ID（留空自动识别）</label>
+        <input type="text" id="comfyPromptNode" placeholder="例如 4">
+        <div class="row3">
+          <div><label>步数</label><input type="text" id="comfySteps" class="mini" placeholder="—"></div>
+          <div><label>CFG</label><input type="text" id="comfyCfg" class="mini" placeholder="—"></div>
+          <div><label>重绘幅度</label><input type="text" id="comfyDenoise" class="mini" placeholder="—"></div>
+        </div>
+        <div class="dim-note">工作流里把节点标题改成 PROMPT / NEGATIVE / INPUT / MASK / SIZE / OUTPUT，插件按角色注入；没改也能靠类型自动识别。</div>
+      </details>
+
+      <div class="btnRow">
+        <button id="btnComfyTemplates" class="accent-btn">添加内置模板</button>
+        <button id="btnComfyAdapt" class="secondary">适配本机模型</button>
+        <button id="btnComfyExport" class="secondary">导出预设…</button>
+        <button id="btnComfyImportAll" class="secondary">导入预设…</button>
+      </div>
+      <div class="dim-note">「适配本机模型」按 ComfyUI 里实际的文件名改写工作流：子目录、量化档（Q4/Q8）、大小写不同都能对上；本机没装 GGUF 加载器时会自动换成标准加载器。改不动会明确告诉你缺什么，不会把模型硬套上去。换电脑后先点这一下再跑。</div>
+      <div class="dim-note">同一条工作流可以填多台机器：运行时自动选第一台在线的，某台离线会顺延到下一台；「检测全部」逐台核对是否缺模型文件。不同模型仍需各自的工作流（节点和模型文件名不同），但同一模型不必为每台机器复制一遍。</div>
+    </fieldset>
+
+    <fieldset id="secText">
+      <legend>服务接入 · 文本服务（语言模型 / 图片分析）</legend>
+      <label>区域（切换候选模型列表）</label>
+      <div class="seg" id="txtRegion"></div>
+      <label>语言模型（提示词助手 / 蓝图 / 指令解析）</label>
+      <div id="txtModel"></div>
+      <input type="text" id="txtModelCustom" class="hidden" placeholder="模型名（如 deepseek-flash）" style="margin-top:4px">
+      <label>Base URL（OpenAI 兼容 · 选择模型后自动填充，可修改）</label>
+      <input type="text" id="txtBaseUrl" placeholder="https://api.deepseek.com/v1">
+      <label>API Key</label>
+      <input type="password" id="txtApiKey" placeholder="sk-xxxxxxxx（填写后自动保存到本机）" autocomplete="off">
+      <label>图片分析模型（拆图看图专用 · 仅列支持看图的模型）</label>
+      <div id="txtVisionModel"></div>
+      <input type="text" id="txtVisionCustom" class="hidden" placeholder="自定义图片分析模型名" style="margin-top:4px">
+      <div class="dim-note" id="txtVisionNote">语言模型支持看图时自动跟随；不支持时使用上一次跑通的模型</div>
+      <div class="btnRow">
+        <button id="btnTestText">测试连接</button>
+      </div>
+      <div class="status-line" id="txtStatus">未配置（可选）· 用于提示词助手 / 拆图看图分析</div>
+    </fieldset>
+
+    <fieldset id="secModelMap">
+      <legend>模型分配（功能 → 模型）</legend>
+      <label>生成</label>
+      <div id="mapGen"></div>
+      <input type="text" id="mapGenCustom" class="hidden" placeholder="模型名" style="margin-top:4px">
+      <label>编辑 / 拆图逐层</label>
+      <div id="mapEdit"></div>
+      <input type="text" id="mapEditCustom" class="hidden" placeholder="模型名" style="margin-top:4px">
+      <label>提示词助手 / 蓝图</label>
+      <div id="mapText"></div>
+      <input type="text" id="mapTextCustom" class="hidden" placeholder="模型名" style="margin-top:4px">
+      <div class="status-line" id="mapStatus">「跟随默认」= 不覆盖；拆图逐层跟随「编辑」模型</div>
+    </fieldset>
+
+    <fieldset id="secDefaults">
+      <legend>默认参数</legend>
+      <div class="row2">
+        <div>
+          <label>默认尺寸</label>
+          <div id="defSize"></div>
+        </div>
+        <div>
+          <label>默认质量</label>
+          <div id="defQuality"></div>
+        </div>
+      </div>
+      <label>生成候选张数（文生图 / 相似图）</label>
+      <div id="defVariants"></div>
+      <label>并发请求数（拆图逐层 / 多候选）</label>
+      <div id="defConcurrency"></div>
+      <div class="dim-note">并发越高总耗时越短，但更易触发平台限流；不稳时降到 1–2</div>
+      <label class="check"><input type="checkbox" id="defTransparent"> 默认透明背景</label>
+      <label class="check"><input type="checkbox" id="defClip"> 默认结果裁剪到选区</label>
+      <label class="check"><input type="checkbox" id="defSmartObject"> 结果以智能对象插入（可无损缩放；拆图除外）</label>
+      <label class="check"><input type="checkbox" id="defOutpaintKeep"> 扩图保留原图区域（挖空蒙版；默认关，关掉融合更自然）</label>
+      <div class="dim-note">候选张数 = 每次生成几张备选（并发请求，选一张插入，其余存入历史）；也可在功能面板临时调整</div>
+      <div class="status-line" id="defStatus"></div>
+    </fieldset>
+
+    <fieldset id="secHelp">
+      <legend>功能说明（怎么用 · 特点 · 开销）</legend>
+      <div class="dim-note">每个功能从注册表自动生成。开销 = 每运行一次消耗的请求次数（图像 = 生成请求 · 文本 = 文本请求；多候选张数另计）。</div>
+      <div class="help-master">
+        <button id="btnHelpToggle" type="button">▸ 展开说明</button>
+      </div>
+      <div id="helpList" class="collapsed"></div>
+    </fieldset>
+
+    <fieldset id="secDiag">
+      <legend>诊断与数据</legend>
+      <label class="check"><input type="checkbox" id="diagLog"> 记录调试日志（psspark_debug.log）</label>
+      <label>历史缓存</label>
+      <div class="status-line" id="cacheStats">统计中…</div>
+      <div class="btnRow">
+        <button id="btnCacheMove" class="secondary">更换缓存位置</button>
+        <button id="btnCacheClean" class="secondary">清理未收藏缓存</button>
+      </div>
+      <div class="btnRow hidden" id="cacheResetRow">
+        <button id="btnCacheReset" class="secondary">恢复默认位置</button>
+      </div>
+      <div class="dim-note">缓存仅含插件自建目录（结果图与参数记录）；★ 收藏的任务不会被清理；不触碰其它文件。</div>
+      <div class="status-line" id="cacheStatus"></div>
+      <div class="status-line" id="versionInfo"></div>
+    </fieldset>
+  </div>
+</div>
+
+<div id="imgPreview" class="hidden">
+  <div class="pv-head">
+    <span id="pvCap" class="pv-cap"></span>
+    <div class="pv-seg" id="pvModes">
+      <button type="button" data-mode="single" class="on">单图</button>
+      <button type="button" data-mode="side">并排</button>
+      <button type="button" data-mode="slide">滑动</button>
+    </div>
+    <div class="pv-zoom">
+      <button id="pvZoomOut" type="button">−</button>
+      <span id="pvZoomVal">100%</span>
+      <button id="pvZoomIn" type="button">＋</button>
+    </div>
+    <button id="btnPvClose" type="button">关闭</button>
+  </div>
+  <div class="pv-body" id="pvBody">
+    <div class="pv-stage mode-single" id="pvStage">
+      <div class="pv-frame" id="pvFrameA"><img id="pvImgA" alt=""></div>
+      <div class="pv-frame" id="pvFrameB"><img id="pvImgB" alt=""></div>
+      <div id="pvDivider" class="pv-divider hidden"></div>
+      <div id="pvSel" class="pv-sel hidden"></div>
+    </div>
+  </div>
+  <div class="pv-foot">
+    <div class="pv-thumbs hidden" id="pvThumbs"></div>
+    <div class="pv-redo">
+      <input type="text" id="pvRedoPrompt" placeholder="补充要求（可留空，例：把手部改自然）">
+      <button id="pvRedoBtn" type="button" disabled>重做框内区域</button>
+    </div>
+    <div class="pv-hint" id="pvHint">在图上拖一个矩形，可只重做该区域（图像 ×1）</div>
+  </div>
+</div>
+
+<div id="modalLayer"></div>
+
+<!-- 二次确认层（扩图超限等）：UXP 里 window.confirm 不可用，用同款「隐藏底层 + 覆盖层」实现 -->
+<div id="confirmOverlay" class="hidden">
+  <div class="overlay-head"><span class="t" id="cfHead">请确认</span></div>
+  <div class="confirm-body">
+    <div class="confirm-card">
+      <div class="confirm-title" id="cfTitle"></div>
+      <div class="confirm-text" id="cfText"></div>
+      <div class="confirm-actions">
+        <button id="cfCancel" type="button">取消</button>
+        <button id="cfOk" type="button" class="primary">仍然继续</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/brand.js"></script>
+<script src="js/diag.js"></script>
+<script src="js/services.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/api.js"></script>
+<script src="js/ps.js"></script>
+<script src="js/registry.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<!-- DEV:BEGIN -->
+<script src="js/dev/bench.js"></script>
+<script src="js/dev/devmode.js"></script>
+<!-- DEV:END -->
+</body>
+</html>

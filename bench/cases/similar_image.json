@@ -1,0 +1,12 @@
+{
+  "id": "similar_image",
+  "title": "相似图 · 单图参考",
+  "category": "gen",
+  "enabled": false,
+  "instance": "similar",
+  "prompt": "",
+  "images": ["assets/scene.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "参考图生成（非改图），默认不测"
+}

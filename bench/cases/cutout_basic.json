@@ -1,0 +1,11 @@
+{
+  "id": "cutout_basic",
+  "title": "抠图 · 透明通道",
+  "category": "edit",
+  "instance": "cutout",
+  "prompt": "",
+  "images": ["assets/scene.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true, "alpha": true },
+  "note": "必须输出透明背景；看边缘是否干净、有无残留背景"
+}

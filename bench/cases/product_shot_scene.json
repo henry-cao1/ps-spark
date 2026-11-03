@@ -1,0 +1,11 @@
+{
+  "id": "product_shot_scene",
+  "title": "商品图 · 素材入场景",
+  "category": "edit",
+  "instance": "product_shot",
+  "prompt": "把商品放在木质桌面上，柔和自然光，电商主图质感，画面干净",
+  "images": ["assets/scene.png", "assets/product.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看商品是否保形（不被重绘）、与场景光影是否自然"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "photo_restore",
+  "title": "老照片修复 · 去划痕",
+  "category": "edit",
+  "instance": "photo_restore",
+  "prompt": "修复划痕与折痕，还原自然色彩，保持人物与构图不变",
+  "images": ["assets/old_photo.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看是否去掉划痕，同时没有把画面改成另一张图"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "erase_object",
+  "title": "擦除 · 框外不变",
+  "category": "edit",
+  "instance": "erase",
+  "prompt": "",
+  "images": ["assets/scene.png"],
+  "mask": "assets/scene_mask.png",
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true, "maxOutsideChange": 8 },
+  "note": "核心看「框外变化」；再看框内是否真的干净、有无残影"
+}

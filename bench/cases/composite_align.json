@@ -1,0 +1,12 @@
+{
+  "id": "composite_align",
+  "title": "原位合成 · 多图与保形",
+  "category": "edit",
+  "instance": "composite",
+  "prompt": "把资产放到画面右下角的地面上，大小与透视合理",
+  "images": ["assets/scene.png", "assets/product.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "extra": { "hasAsset": true, "aligned": true },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看资产是否保形（不重绘）、位置是否可控、光影是否融合"
+}

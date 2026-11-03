@@ -1,0 +1,11 @@
+{
+  "id": "image_fusion_scene",
+  "title": "图像融合 · 双图合成",
+  "category": "edit",
+  "instance": "image_fusion",
+  "prompt": "把第二张图的窗景融入第一张图的墙面，保持透视与光照一致",
+  "images": ["assets/scene.png", "assets/scene2.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看透视是否一致、有无拼贴错位"
+}

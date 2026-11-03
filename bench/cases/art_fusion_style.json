@@ -1,0 +1,11 @@
+{
+  "id": "art_fusion_style",
+  "title": "艺术融合 · 双图风格迁移",
+  "category": "edit",
+  "instance": "art_fusion",
+  "prompt": "用水彩笔触重新演绎主源画面，保留主体结构",
+  "images": ["assets/scene.png", "assets/style.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看风格是否真的迁移过来、主体是否还可辨认"
+}

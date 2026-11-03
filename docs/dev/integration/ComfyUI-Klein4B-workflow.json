@@ -1,0 +1,65 @@
+{
+  "1": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "flux-2-klein-4b-Q8_0.gguf"
+    }
+  },
+  "2": {
+    "class_type": "CLIPLoaderGGUF",
+    "inputs": {
+      "clip_name": "Qwen3-4B-UD-Q6_K_XL.gguf",
+      "type": "flux2"
+    }
+  },
+  "3": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "flux2-vae.safetensors"
+    }
+  },
+  "4": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "text": "a red fox sitting in fresh snow, soft morning light, photorealistic",
+      "clip": ["2", 0]
+    }
+  },
+  "5": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "6": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 42,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["1", 0],
+      "positive": ["4", 0],
+      "negative": ["4", 0],
+      "latent_image": ["5", 0]
+    }
+  },
+  "7": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": ["6", 0],
+      "vae": ["3", 0]
+    }
+  },
+  "8": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": ["7", 0],
+      "filename_prefix": "klein_test"
+    }
+  }
+}

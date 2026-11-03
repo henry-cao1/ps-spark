@@ -1,0 +1,11 @@
+{
+  "id": "text2img_text",
+  "title": "文生图 · 中文文字渲染",
+  "category": "gen",
+  "enabled": false,
+  "instance": "text2img",
+  "prompt": "一张简约促销海报，米白色背景，正中间用黑色粗体中文写「限时特惠」，下方一行小字「全场五折」，构图干净，留白充足",
+  "params": { "size": "1024x1024", "quality": "auto" },
+  "expected": { "aspect": 1 },
+  "note": "纯生图，默认不测"
+}

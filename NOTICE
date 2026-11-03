@@ -1,0 +1,154 @@
+PS Spark
+Copyright (C) 2026 Cao
+
+Repository: https://github.com/henry-cao1/ps-spark
+Issues: https://github.com/henry-cao1/ps-spark/issues
+
+PS Spark is released under the GNU Affero General Public License, version 3 (AGPL-3.0).
+The full license text is in the LICENSE file; the canonical text is at
+https://www.gnu.org/licenses/agpl-3.0.txt
+
+You may use, modify and distribute this software, including commercially, as long as you
+comply with AGPL-3.0:
+- when you distribute the software or a modified version, you must ship the complete source
+  under AGPL-3.0 as well;
+- if you run a modified version as a network service, you must offer its users a way to
+  obtain the source;
+- you must keep this file and the copyright notices in the source.
+
+====================================================================
+Third-party components and external services
+====================================================================
+
+1. Adobe Photoshop / UXP
+   This plugin runs inside the Adobe Photoshop UXP host and uses Adobe's public APIs.
+   It is not affiliated with, endorsed by, or certified by Adobe. "Adobe" and "Photoshop"
+   are trademarks of Adobe, used only to describe the runtime environment.
+
+2. ComfyUI (https://github.com/comfyanonymous/ComfyUI)
+   The plugin only calls ComfyUI's public HTTP endpoints (/prompt, /history, /upload/image,
+   ...). It does not include, link against, or modify ComfyUI source, so it is not a
+   derivative work. Your own ComfyUI installation and custom nodes are governed by their
+   own licenses (ComfyUI is GPL-3.0).
+
+3. Image generation services
+   The plugin calls third-party inference services over HTTPS. Their terms of service,
+   content policies, billing and data handling are set by each provider. API keys are stored
+   only on your machine and are never uploaded to any server of this project (the project
+   has no server).
+
+4. Model names
+   gpt-image, nano-banana, FLUX, Klein, SDXL and similar names are trademarks or product
+   names of their respective owners. They are used here only to select a model, and imply
+   no affiliation, agency or endorsement.
+
+5. Icons and fonts
+   Icons under icons/ are made for this project. The UI uses system fonts only
+   (SF Pro / PingFang SC on macOS, Segoe UI / Microsoft YaHei on Windows); no font files
+   are distributed with this project.
+
+====================================================================
+Trademarks and naming
+====================================================================
+
+"PS Spark" is the name of this project. To avoid confusion:
+- modified versions must not use "PS Spark" as product name, plugin name or icon, and must
+  not suggest they are the official release;
+- when distributing a modified version, publish it under your own name and state that it is
+  "based on PS Spark".
+
+====================================================================
+Commercial licensing
+====================================================================
+
+If your use case cannot comply with AGPL-3.0 (for example, closed-source distribution, or
+integrating the code into a commercial product under other terms), contact the author for a
+commercial license (open an issue in the repository).
+
+This project is open source at https://github.com/henry-cao1/ps-spark . If you obtained
+this software through a paid channel, please ask the seller for a refund — nobody is allowed
+to charge you for the open-source build.
+
+====================================================================
+Disclaimer
+====================================================================
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE. Generated content depends on the
+models and services you use; verify its rights and compliance yourself.
+
+====================================================================
+中文版（以下为中文原文）
+====================================================================
+
+PS Spark
+Copyright (C) 2026 Cao
+
+源码仓库：https://github.com/henry-cao1/ps-spark
+问题反馈：https://github.com/henry-cao1/ps-spark/issues
+
+本项目的完整源码以 GNU Affero 通用公共许可证第 3 版（AGPL-3.0）发布，
+许可证全文见同目录 LICENSE 文件，官方文本：https://www.gnu.org/licenses/agpl-3.0.txt
+
+你可以自由使用、修改、分发本软件，包括商业环境下的使用，但必须遵守 AGPL-3.0：
+- 分发本软件或其修改版时，必须一并提供完整源码，并同样以 AGPL-3.0 授权；
+- 若把修改版作为网络服务提供，必须向使用者提供获取源码的方式；
+- 不得移除本文件与源码中的版权声明。
+
+--------------------------------------------------------------------
+第三方组件与外部服务
+--------------------------------------------------------------------
+
+1. Adobe Photoshop / UXP
+   本插件运行于 Adobe Photoshop 的 UXP 宿主环境，使用 Adobe 提供的公开 API。
+   本项目与 Adobe 无隶属关系，未获得 Adobe 的背书或认证。
+   "Adobe"、"Photoshop" 是 Adobe 公司的商标，仅用于说明运行环境。
+
+2. ComfyUI（https://github.com/comfyanonymous/ComfyUI）
+   本插件仅通过 HTTP 调用本地 ComfyUI 的公开接口（/prompt、/history、/upload/image 等），
+   不包含、不链接、不修改 ComfyUI 源码，因此不构成衍生作品。
+   用户自行安装的 ComfyUI 及其自定义节点，其许可（ComfyUI 为 GPL-3.0）由用户自行遵守。
+
+3. 图像生成服务（第三方 API）
+   插件通过 HTTPS 调用第三方推理服务。服务的使用条款、内容政策、计费与数据处理
+   由对应服务商规定；API Key 仅保存在用户本机，不上传至本项目任何服务器
+   （本项目没有服务器）。
+
+4. 模型名称
+   gpt-image、nano-banana、FLUX、Klein、SDXL 等名称是各自权利人的商标或产品名，
+   本插件仅在"选择哪一个模型"的意义上使用这些名称，不表示任何隶属、代理或背书关系。
+
+5. 图标与字体
+   icons/ 下的图标为本项目自制。界面字体使用操作系统自带字体
+   （macOS 为 SF Pro / PingFang SC，Windows 为 Segoe UI / Microsoft YaHei），
+   不随本项目分发任何字体文件。
+
+--------------------------------------------------------------------
+商标与名称使用
+--------------------------------------------------------------------
+
+"PS Spark" 是本项目的名称。为避免混淆：
+- 修改版不得使用 "PS Spark" 作为产品名、插件名或图标，也不得暗示是官方版本；
+- 分发修改版时，请在自己的名称下发布，并注明"基于 PS Spark 修改"。
+
+--------------------------------------------------------------------
+商业授权
+--------------------------------------------------------------------
+
+如你的使用场景无法满足 AGPL-3.0（例如需要闭源分发、或需要以非 AGPL 条款
+集成进商业产品），可另行联系作者获取商业授权（在仓库 Issues 留言即可）。
+
+本项目已开源：源码见 https://github.com/henry-cao1/ps-spark 。
+若你是通过付费渠道获得本软件的，请向卖方申请退款——开源版本免费提供，
+任何人无权向你收费。
+
+--------------------------------------------------------------------
+免责声明
+--------------------------------------------------------------------
+
+本软件按"现状"提供，不附带任何明示或暗示的担保，包括但不限于适销性、
+特定用途适用性与不侵权的担保。因使用本软件产生的任何直接或间接损失，
+作者不承担责任。生成内容由你所使用的模型与服务商决定，请自行确认
+生成物的权利状态与合规性。

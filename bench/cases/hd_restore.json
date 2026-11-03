@@ -1,0 +1,11 @@
+{
+  "id": "hd_restore",
+  "title": "高清修复 · 保真提升",
+  "category": "edit",
+  "instance": "hd_restore",
+  "prompt": "",
+  "images": ["assets/blurry.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看清晰度是否提升、同时没有凭空添加不存在的细节（保真优先）"
+}

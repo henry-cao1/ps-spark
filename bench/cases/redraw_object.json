@@ -1,0 +1,12 @@
+{
+  "id": "redraw_object",
+  "title": "局部重绘 · 指令遵循",
+  "category": "edit",
+  "instance": "local_redraw",
+  "prompt": "把框内的红色方块替换成一盆绿植，光照方向与画面一致，边缘自然",
+  "images": ["assets/scene.png"],
+  "mask": "assets/scene_mask.png",
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true, "maxOutsideChange": 8 },
+  "note": "看是否按指令替换、框外是否被改动"
+}

@@ -1,0 +1,29 @@
+{
+  "concurrency": 2,
+  "timeoutSec": 300,
+  "providers": {
+    "grsai": {
+      "type": "openai",
+      "baseUrl": "https://grsai.dakka.com.cn",
+      "apiKey": "",
+      "apiKeyEnv": "GRSAI_API_KEY",
+      "generationsPath": "/v1/images/generations",
+      "editsPath": "/v1/images/edits",
+      "unifiedPath": "/v1/api/generate"
+    },
+    "siliconflow": {
+      "type": "openai",
+      "baseUrl": "https://api.siliconflow.cn/v1",
+      "apiKey": "",
+      "apiKeyEnv": "SILICONFLOW_API_KEY",
+      "generationsPath": "/images/generations",
+      "editsPath": "/images/edits"
+    }
+  },
+  "models": [
+    { "id": "gpt-image-2.5", "provider": "grsai", "label": "GPT Image 2.5", "pricePerImage": 0.32 },
+    { "id": "seedream-4.5", "provider": "grsai", "label": "Seedream 4.5", "pricePerImage": 0.27 },
+    { "id": "nano-banana-pro", "provider": "grsai", "label": "Nano Banana Pro", "pricePerImage": 0.9 },
+    { "id": "qwen-image-3.0", "provider": "siliconflow", "label": "Qwen-Image 3.0", "pricePerImage": 0.18 }
+  ]
+}

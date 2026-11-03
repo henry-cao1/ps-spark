@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS Spark 模型测试台</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo">◆</span>
+    <span class="name">PS Spark 模型测试台</span>
+    <span class="tag">内部</span>
+  </div>
+  <div class="meta">
+    <span id="dataDir" class="dir" title="插件数据目录">数据目录：—</span>
+    <span id="keyState" class="pill">Key 检查中</span>
+    <button id="btnRefresh" class="btn ghost" type="button">刷新</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <div class="side-head">
+      <span>用例</span>
+      <span id="caseCount" class="dim">0</span>
+    </div>
+    <div class="side-search">
+      <input id="caseSearch" type="search" placeholder="搜标题 / 提示词…" autocomplete="off">
+    </div>
+    <div id="caseList" class="case-list"></div>
+    <div class="side-foot">
+      <button id="btnExportCase" class="btn ghost wide" type="button" disabled>导出用例包</button>
+      <button id="btnImportPack" class="btn ghost wide" type="button">导入提示词包…</button>
+      <button id="btnImportCase" class="btn ghost wide" type="button">导入用例包</button>
+      <button id="btnDeleteCase" class="btn danger wide" type="button" disabled>删除当前用例</button>
+      <input id="caseFile" type="file" accept="application/json,.json" class="hidden">
+      <input id="packFile" type="file" accept=".txt,.md,text/plain" class="hidden">
+      <div class="hint">用例三种来源：PS 插件冻结、导入用例包、导入提示词包（纯文本，一行一条或 [A1] 分块）。</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="empty" class="empty">
+      <div class="empty-title">还没有用例</div>
+      <div class="empty-sub">先在 Photoshop 插件里打开「开发者工作台 ▸ 基准」，点「冻结当前画面并运行」，这里就会出现输入、提示词和结果。</div>
+    </div>
+
+    <div id="caseView" class="case-view hidden">
+      <section class="block case-info">
+        <div class="block-head">
+          <h1 id="caseTitle">—</h1>
+          <span id="caseBadge" class="badge">—</span>
+        </div>
+        <div id="caseMeta" class="case-meta"></div>
+        <div id="caseWarn" class="case-warn hidden"></div>
+        <div class="info-grid">
+          <div class="info-col inputs-col">
+            <div class="label">输入素材</div>
+            <div id="inputs" class="inputs"></div>
+          </div>
+          <div class="info-col prompt-col">
+            <div class="label">冻结的提示词 <span id="promptLen" class="dim"></span></div>
+            <pre id="prompt" class="prompt"></pre>
+            <details class="params">
+              <summary>参数</summary>
+              <pre id="params" class="params-body"></pre>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="block run-block">
+        <div class="block-head">
+          <h2>运行模型</h2>
+          <div class="run-actions">
+            <button id="btnAll" class="btn ghost small" type="button">全选</button>
+            <button id="btnUnrun" class="btn ghost small" type="button">只选未跑</button>
+            <button id="btnNone" class="btn ghost small" type="button">清空</button>
+            <button id="btnRun" class="btn primary" type="button" disabled>运行选中（0）</button>
+          </div>
+        </div>
+        <div id="modelGroups" class="model-groups"></div>
+        <div id="keyHint" class="key-hint hidden">
+          <div class="key-title">未配置 API Key</div>
+          <div class="key-row">
+            <input id="keyInput" type="password" placeholder="sk-..." autocomplete="off">
+            <button id="keySave" class="btn primary small" type="button">保存</button>
+          </div>
+          <div class="key-tip">只写入本机 bench/config.json，不会上传。</div>
+        </div>
+        <div id="jobBox" class="job hidden">
+          <div class="job-line">
+            <span id="jobText">运行中…</span>
+            <span id="jobCount" class="dim"></span>
+          </div>
+          <div class="bar"><div id="barFill" class="bar-fill"></div></div>
+          <pre id="jobLog" class="job-log"></pre>
+        </div>
+      </section>
+
+      <section class="block results-block">
+        <div class="block-head">
+          <h2>结果 <span id="runCount" class="dim"></span></h2>
+          <div class="run-actions">
+            <button id="btnExportCsv" class="btn ghost small" type="button">导出 CSV</button>
+          </div>
+          <div class="legend"><span class="dot"></span> 基准 <span class="dot ok"></span> 成功 <span class="dot err"></span> 失败</div>
+        </div>
+        <div id="runGrid" class="grid"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div id="lightbox" class="lightbox hidden">
+  <img id="lightImg" alt="">
+  <div id="lightCap" class="light-cap"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

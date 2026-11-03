@@ -1,0 +1,11 @@
+{
+  "id": "colorize_lineart",
+  "title": "线稿上色 · 结构与配色",
+  "category": "edit",
+  "instance": "colorize",
+  "prompt": "自然写实配色，光影柔和",
+  "images": ["assets/lineart.png"],
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true },
+  "note": "看线条是否完整保留、颜色是否协调；人工评分权重高"
+}

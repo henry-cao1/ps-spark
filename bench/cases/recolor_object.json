@@ -1,0 +1,12 @@
+{
+  "id": "recolor_object",
+  "title": "换色 · 只改颜色",
+  "category": "edit",
+  "instance": "recolor",
+  "prompt": "",
+  "images": ["assets/scene.png"],
+  "mask": "assets/scene_mask.png",
+  "params": { "size": "auto", "quality": "auto", "color": "#2E7D32" },
+  "expected": { "aspectFromFirstImage": true, "maxOutsideChange": 8 },
+  "note": "看是否只改变色相，明暗/材质/形状保持不变；框外不应变化"
+}

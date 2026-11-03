@@ -1,0 +1,11 @@
+{
+  "id": "text2img_basic",
+  "title": "文生图 · 主体与光影",
+  "category": "gen",
+  "enabled": false,
+  "instance": "text2img",
+  "prompt": "一只坐在木质窗台上的橘猫，午后阳光从侧面照进来，背景是虚化的绿植，写实摄影，细节丰富",
+  "params": { "size": "1024x1024", "quality": "auto" },
+  "expected": { "aspect": 1 },
+  "note": "纯生图，默认不测；需要时把 enabled 改为 true"
+}

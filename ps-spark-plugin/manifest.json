@@ -1,0 +1,67 @@
+{
+  "id": "com.psspark.ps.assistant",
+  "name": "PS Spark",
+  "version": "1.7.0",
+  "main": "index.html",
+  "manifestVersion": 5,
+  "host": {
+    "app": "PS",
+    "minVersion": "24.4"
+  },
+  "requiredPermissions": {
+    "network": {
+      "domains": "all"
+    },
+    "localFileSystem": "fullAccess",
+    "clipboard": "readAndWrite"
+  },
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "psSparkPanel",
+      "label": {
+        "default": "PS Spark"
+      },
+      "minimumSize": {
+        "width": 280,
+        "height": 420
+      },
+      "maximumSize": {
+        "width": 600,
+        "height": 900
+      },
+      "preferredDockedSize": {
+        "width": 320,
+        "height": 620
+      },
+      "icons": [
+        {
+          "width": 23,
+          "height": 23,
+          "path": "icons/icon.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "darkest",
+            "dark"
+          ]
+        },
+        {
+          "width": 23,
+          "height": 23,
+          "path": "icons/icon-light.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "light",
+            "lightest"
+          ]
+        }
+      ]
+    }
+  ]
+}

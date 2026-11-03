@@ -1,0 +1,12 @@
+{
+  "id": "text_edit",
+  "title": "内容修图 · 改价格文字",
+  "category": "edit",
+  "instance": "content_retouch",
+  "prompt": "把价格数字「199」改成「299」，字号、字重与原有风格保持一致",
+  "images": ["assets/poster.png"],
+  "mask": "assets/poster_mask.png",
+  "params": { "size": "auto", "quality": "auto" },
+  "expected": { "aspectFromFirstImage": true, "maxOutsideChange": 8 },
+  "note": "人工重点看：数字是否正确、有没有错字/糊字、字体是否一致"
+}
