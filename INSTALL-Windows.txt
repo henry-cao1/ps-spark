@@ -1,0 +1,51 @@
+﻿PS Spark 1.7.0 - Windows release build
+Build date: 2026-11-04
+Default UI language: English (Settings > Language switches to Chinese)
+
+[PS Spark is open source. If you paid for it, ask the seller for a refund.]
+Not an Adobe product. Licensed under AGPL-3.0 (see LICENSE).
+
+1. Install (either way)
+  A. Double-click
+    Run Install-Windows.bat and confirm.
+    It copies to %APPDATA%\Adobe\UXP\Plugins\External\com.psspark.ps.assistant_1.7.0
+    and removes older copies (com.psspark.ps.assistant_1.0.0 / com.psspark.*).
+
+  B. Manual
+    1) Copy the whole com.psspark.ps.assistant_1.7.0 folder to:
+       %APPDATA%\Adobe\UXP\Plugins\External\
+       (type %APPDATA% in Explorer's address bar to get there)
+    2) Delete older copies first, otherwise two panels appear in the Plug-ins menu.
+
+2. Enable
+  1. Photoshop > Edit > Preferences > Plug-ins > Enable Developer Mode
+  2. Quit Photoshop completely, then reopen it
+  3. Plug-ins > PS Spark
+
+3. This is a release build
+  The developer workbench is removed and the bundle is isolation-checked.
+
+4. First run
+  - Settings > Image service: enter your API key (keys are per-machine; re-enter on Windows)
+  - Settings > Language: Chinese / English, kept after restart
+
+5. Local ComfyUI (optional)
+  - Double-click Start-ComfyUI.bat (localhost only)
+  - LAN access: Start-ComfyUI.bat -lan
+  - Another port: Start-ComfyUI.bat -port 8189
+  - Settings > Local ComfyUI > Add built-in template (text-to-image / reference / inpaint)
+  - Local models are supported, but you adapt the workflow to the files installed
+    on your machine (Adapt local models). The models tested on Windows and on
+    macOS are not the same set, so a preset may need adapting after moving machines.
+
+6. Troubleshooting
+  Log:
+    %APPDATA%\Adobe\UXP\PluginsStorage\PHSP\<PS major version>\External\com.psspark.ps.assistant\PluginData\psspark_debug.log
+    Example: ...\PHSP\26\External\com.psspark.ps.assistant\PluginData\psspark_debug.log
+  The Diagnostics section at the bottom of the panel shows recent lines.
+  When reporting, include: steps + matching log time range + screenshot.
+  Feedback: psspark-feedback@hotmail.com
+
+7. Uninstall
+  Delete %APPDATA%\Adobe\UXP\Plugins\External\com.psspark.ps.assistant_1.7.0;
+  history and cache live under PluginsStorage - delete that folder too if needed.

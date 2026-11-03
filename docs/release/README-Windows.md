@@ -1,0 +1,51 @@
+# PS Spark 1.7.0 — Windows
+
+A Photoshop (UXP) panel for AI image generation and editing: text-to-image, reference-guided
+variations, inpainting, outpainting, object removal, cutout, layer decomposition and history —
+all without leaving Photoshop.
+
+Licensed under **AGPL-3.0**. Not an Adobe product; not affiliated with or endorsed by Adobe.
+
+## Features
+
+- **Generate** — text to image, similar image from a reference, batch variations
+- **Edit** — local redraw, outpaint, erase, cutout, recolor, retouch, art fusion, composite
+- **Decompose** — split one image into separate layers; each element keeps its original
+  position and scale, with a transparent background
+- **History** — browse past results, insert as a layer, rerun
+- **Local ComfyUI (optional)** — run supported workflows on your own machine; cloud features
+  do not depend on it
+- **Bilingual UI** — English and Chinese, switchable at runtime
+
+## Requirements
+
+- Windows 10/11 (macOS build not included in this package)
+- Photoshop 24.4 or newer (2023+), with Developer Mode enabled
+- An API key for the image service, or a local ComfyUI install
+
+## Install
+
+1. Download `PS-Spark-1.7.0-en-win-2026-11-04.zip` from the assets below and extract it.
+2. Run `Install-Windows.bat`, or copy the `com.psspark.ps.assistant_1.7.0` folder into
+   `%APPDATA%\Adobe\UXP\Plugins\External\`.
+3. In Photoshop: Edit ▸ Preferences ▸ Plug-ins ▸ enable **Developer Mode**.
+4. Restart Photoshop, then open **Plugins ▸ PS Spark**.
+5. In the panel: Settings ▸ Service, paste your API key.
+
+Full instructions and troubleshooting: `INSTALL-Windows.txt`.
+
+## Notes
+
+- Local models are supported through ComfyUI, but they are not plug-and-play: adapt the
+  workflow to the model files installed on your machine. The local models tested on Windows
+  and on macOS are not the same set, so a preset may need adapting after moving machines.
+- API keys are stored locally (UXP secure storage) and are never uploaded.
+- Review generated or edited content before commercial use.
+- Diagnostics log:
+  `%APPDATA%\Adobe\UXP\PluginsStorage\PHSP\<PS major>\External\com.psspark.ps.assistant\PluginData\psspark_debug.log`
+- Feedback: **psspark-feedback@hotmail.com**
+
+## License
+
+AGPL-3.0. See [LICENSE](../../LICENSE). If you distribute a modified version you must also make
+the complete source available under the same license.
