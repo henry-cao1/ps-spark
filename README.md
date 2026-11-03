@@ -193,7 +193,7 @@ Four mechanics do most of the work:
 node tools/build.mjs                 # release build (default UI language: Chinese)
 node tools/build.mjs --channel=dev   # dev build with the developer workbench
 node tools/build.mjs --target=oss    # open-source build (default UI language: English)
-node tools/package-win.mjs           # Windows delivery zip (installer + docs)
+node tools/package-win.mjs --channel=release --lang=en  # English Windows zip
 
 cd bench && npm install && npm test  # 9 suites, 705 assertions
 ```
