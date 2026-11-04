@@ -1,10 +1,20 @@
-# PS Spark 1.7.0 — Windows
+# PS Spark 1.7.0 — Windows & macOS
 
 A Photoshop (UXP) panel for AI image generation and editing: text-to-image, reference-guided
 variations, inpainting, outpainting, object removal, cutout, layer decomposition and history —
 all without leaving Photoshop.
 
 Licensed under **AGPL-3.0**. Not an Adobe product; not affiliated with or endorsed by Adobe.
+
+## Downloads
+
+| Platform | Package | Default UI |
+|---|---|---|
+| Windows 10/11 | `PS-Spark-1.7.0-en-win-2026-11-04.zip` | English |
+| macOS | `PS-Spark-1.7.0-mac-2026-11-04.zip` | Chinese |
+
+Both packages contain the same plugin. The language can be switched at runtime under
+Settings ▸ Language.
 
 ## Features
 
@@ -19,20 +29,34 @@ Licensed under **AGPL-3.0**. Not an Adobe product; not affiliated with or endors
 
 ## Requirements
 
-- Windows 10/11 (macOS build not included in this package)
+- Windows 10/11 or macOS
 - Photoshop 24.4 or newer (2023+), with Developer Mode enabled
 - An API key for the image service, or a local ComfyUI install
 
-## Install
+## Install — Windows
 
-1. Download `PS-Spark-1.7.0-en-win-2026-11-04.zip` from the assets below and extract it.
+1. Download the Windows package above and extract it.
 2. Run `Install-Windows.bat`, or copy the `com.psspark.ps.assistant_1.7.0` folder into
    `%APPDATA%\Adobe\UXP\Plugins\External\`.
 3. In Photoshop: Edit ▸ Preferences ▸ Plug-ins ▸ enable **Developer Mode**.
 4. Restart Photoshop, then open **Plugins ▸ PS Spark**.
 5. In the panel: Settings ▸ Service, paste your API key.
 
-Full instructions and troubleshooting: `INSTALL-Windows.txt`.
+## Install — macOS
+
+1. Download the macOS package above and extract it.
+2. Copy the `com.psspark.ps.assistant_1.7.0` folder into the UXP plug-ins directory:
+
+   ```bash
+   mkdir -p ~/Library/Application\ Support/Adobe/UXP/Plugins/External
+   cp -R com.psspark.ps.assistant_1.7.0 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
+   ```
+
+3. In Photoshop: Settings ▸ Plug-ins ▸ enable **Developer Mode**.
+4. Quit Photoshop completely, reopen it, then open **Plug-ins ▸ PS Spark**.
+5. In the panel: Settings ▸ Service, paste your API key.
+
+Full instructions and troubleshooting: `INSTALL-Windows.txt` / `INSTALL-macOS.txt`.
 
 ## Notes
 
@@ -42,7 +66,8 @@ Full instructions and troubleshooting: `INSTALL-Windows.txt`.
 - API keys are stored locally (UXP secure storage) and are never uploaded.
 - Review generated or edited content before commercial use.
 - Diagnostics log:
-  `%APPDATA%\Adobe\UXP\PluginsStorage\PHSP\<PS major>\External\com.psspark.ps.assistant\PluginData\psspark_debug.log`
+  `%APPDATA%\Adobe\UXP\PluginsStorage\PHSP\<PS major>\External\com.psspark.ps.assistant\PluginData\psspark_debug.log` (Windows) ·
+  `~/Library/Application Support/Adobe/UXP/PluginsStorage/PHSP/<PS major>/External/com.psspark.ps.assistant/PluginData/psspark_debug.log` (macOS)
 - Feedback: **psspark-feedback@hotmail.com**
 
 ## License

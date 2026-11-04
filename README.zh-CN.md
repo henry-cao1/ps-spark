@@ -96,9 +96,12 @@ PS Spark 通过侧载安装，需要打开 Photoshop 的开发者模式：
 
 ### macOS
 
+安装包从 [Releases](https://github.com/henry-cao1/ps-spark/releases/latest) 下载，解压后把插件文件夹
+复制到 UXP 目录：
+
 ```bash
 mkdir -p ~/Library/Application\ Support/Adobe/UXP/Plugins/External
-cp -R ps-spark ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
+cp -R com.psspark.ps.assistant_1.7.0 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
 ```
 
 完全退出并重新打开 Photoshop → **增效工具 ▸ PS Spark**。

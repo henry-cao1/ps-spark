@@ -103,9 +103,12 @@ Download the latest package from [Releases](https://github.com/henry-cao1/ps-spa
 
 ### macOS
 
+Download the macOS package from [Releases](https://github.com/henry-cao1/ps-spark/releases/latest),
+then copy the plugin folder into the UXP directory:
+
 ```bash
 mkdir -p ~/Library/Application\ Support/Adobe/UXP/Plugins/External
-cp -R ps-spark ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
+cp -R com.psspark.ps.assistant_1.7.0 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
 ```
 
 Quit and reopen Photoshop → **Plugins ▸ PS Spark**.
