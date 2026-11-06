@@ -13,7 +13,7 @@
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Photoshop](https://img.shields.io/badge/Photoshop-24.4%2B-31A8FF.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)
-![Tests](https://img.shields.io/badge/tests-705%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-708%20passing-brightgreen.svg)
 
 </div>
 
@@ -101,7 +101,7 @@ PS Spark 通过侧载安装，需要打开 Photoshop 的开发者模式：
 
 ```bash
 mkdir -p ~/Library/Application\ Support/Adobe/UXP/Plugins/External
-cp -R com.psspark.ps.assistant_1.7.0 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
+cp -R com.psspark.ps.assistant_1.7.1 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
 ```
 
 完全退出并重新打开 Photoshop → **增效工具 ▸ PS Spark**。
@@ -163,7 +163,7 @@ node tools/build.mjs --channel=dev   # 开发构建（含开发者工作台）
 node tools/build.mjs --target=oss    # 开源构建（默认界面英文）
 node tools/package-win.mjs           # Windows 交付包（安装脚本 + 说明）
 
-cd bench && npm install && npm test  # 9 个套件，705 项断言
+cd bench && npm install && npm test  # 9 个套件，708 项断言
 ```
 
 发布构建会剥离全部开发者模块，并校验禁用字符串是否残留。测试覆盖面板 UI、ComfyUI 适配与
@@ -179,9 +179,9 @@ tools/package-win.mjs  Windows 交付打包
 
 ## 当前状态
 
-版本 **1.7.0**，已在 macOS 与 Windows 的 Photoshop 24.4+ 上运行。
+版本 **1.7.1**，已在 macOS 与 Windows 的 Photoshop 24.4+ 上运行。
 
-- 自动化覆盖：9 个套件、**705 项断言**
+- 自动化覆盖：9 个套件、**708 项断言**
 - 实机验收：按功能分章在真实文档上验证；已通过的章节单独归档，回归只重跑受影响的部分
 - 已知限制：拆图质量取决于图像模型是否遵守纯色底要求；扩图比例极端时会先弹确认，
   而不是悄悄降质

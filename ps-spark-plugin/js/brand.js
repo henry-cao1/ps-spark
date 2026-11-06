@@ -7,7 +7,7 @@
  */
 const BRAND = {
   name: "PS Spark",
-  version: "1.7.0",
+  version: "1.7.1",
   license: "AGPL-3.0",
   /* 默认界面语言：源码直接侧载时用 en；构建时由 tools/build.mjs 注入 zh / en */
   defaultLang: (function () {

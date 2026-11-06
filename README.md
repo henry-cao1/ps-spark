@@ -13,7 +13,7 @@ selections, layers and a job queue that behave like Photoshop natives.
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 ![Photoshop](https://img.shields.io/badge/Photoshop-24.4%2B-31A8FF.svg)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)
-![Tests](https://img.shields.io/badge/tests-705%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-708%20passing-brightgreen.svg)
 
 </div>
 
@@ -108,7 +108,7 @@ then copy the plugin folder into the UXP directory:
 
 ```bash
 mkdir -p ~/Library/Application\ Support/Adobe/UXP/Plugins/External
-cp -R com.psspark.ps.assistant_1.7.0 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
+cp -R com.psspark.ps.assistant_1.7.1 ~/Library/Application\ Support/Adobe/UXP/Plugins/External/
 ```
 
 Quit and reopen Photoshop → **Plugins ▸ PS Spark**.
@@ -180,7 +180,7 @@ node tools/build.mjs --channel=dev   # dev build with the developer workbench
 node tools/build.mjs --target=oss    # open-source build (default UI language: English)
 node tools/package-win.mjs --channel=release --lang=en  # English Windows zip
 
-cd bench && npm install && npm test  # 9 suites, 705 assertions
+cd bench && npm install && npm test  # 9 suites, 708 assertions
 ```
 
 The release build strips every developer-only module and fails if any marker survives. Tests
@@ -197,9 +197,9 @@ tools/package-win.mjs  Windows delivery packaging
 
 ## Status
 
-Version **1.7.0**. The plugin runs on macOS and Windows against Photoshop 24.4+.
+Version **1.7.1**. The plugin runs on macOS and Windows against Photoshop 24.4+.
 
-- Automated coverage: **705 assertions** across 9 suites
+- Automated coverage: **708 assertions** across 9 suites
 - Manual acceptance: features are verified on real Photoshop documents; passed chapters are
   archived separately so regressions only re-run what changed
 - Known limits: decomposition quality depends on the image model following a flat background;

@@ -67,6 +67,7 @@ ps-spark/
 | 文档 | 内容 |
 |---|---|
 | [开发纪要-2026-10-30.md](dev/开发纪要-2026-10-30.md) | 09-22 → 11-03 完整时间线、版本演进、设计决策、踩坑清单、测试现状 |
+| [产品路线图-2026-11.md](dev/plan/产品路线图-2026-11.md) | P0/P1/P2 排期、验收指标、依赖与风险（批量、拆图 2.0、SDK） |
 | [本地ComfyUI接入说明-2026-10.md](dev/integration/本地ComfyUI接入说明-2026-10.md) | 预设、能力闸门、编辑域 inpaint、队列、验收清单 |
 | [Klein4B本机安装说明-2026-10.md](dev/integration/Klein4B本机安装说明-2026-10.md) | Klein 4B（Q8/Q6 + flux2-vae）的安装与实测数据 |
 | [ComfyUI-Klein4B-workflow.json](dev/integration/ComfyUI-Klein4B-workflow.json) | 内置模板对应的 API 格式工作流 |
@@ -82,11 +83,11 @@ ps-spark/
 | [已通过验收-2026-11-02.md](bench/已通过验收-2026-11-02.md) | 已实机跑通的章节归档，主清单不再重复 |
 | [提示词能力评测集-2026-10.md](bench/提示词能力评测集-2026-10.md) | 10 组 46 条能力维度用例，横向比模型，不是发布验收项 |
 | [Web测试台-使用说明-2026-10.md](bench/Web测试台-使用说明-2026-10.md) | 用例三种来源、提示词包格式、搜索、CSV、跨机复现 |
-| [Windows测试指南.md](bench/Windows测试指南.md) | Windows 包安装、开发者模式与冒烟步骤（1.7.0） |
+| [Windows测试指南.md](bench/Windows测试指南.md) | Windows 包安装、开发者模式与冒烟步骤（1.7.1） |
 
 配套的可执行文件与数据：
 
-- 测试脚本：`bench/test-*.cjs` / `test-*.mjs`（9 个，共 705 项）
+- 测试脚本：`bench/test-*.cjs` / `test-*.mjs`（9 个，共 708 项）
 - 提示词包：`bench/prompts/`
   - `测试提示词-多维度-2026-10-29.txt`（10 组 46 条，评分维度见文件头）
   - `功能测试文本集-2026-10.txt`（冒烟 22 条）

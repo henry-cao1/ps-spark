@@ -1,6 +1,6 @@
-# Windows 测试指南 · PS Spark 1.7.0
+# Windows 测试指南 · PS Spark 1.7.1
 
-> 适用包：`dist/PS-Spark-1.7.0-dev-win-<日期>.zip`（开发版，含开发者工作台，默认中文）
+> 适用包：`dist/PS-Spark-1.7.1-dev-win-<日期>.zip`（开发版，含开发者工作台，默认中文）
 > 生成命令：`node tools/package-win.mjs`
 > 功能项不在这里重复列，统一走 [实机验收清单 F10 平台章](实机验收清单-2026-11-01.md)；本文只讲**装、开、看日志**。
 
@@ -9,15 +9,15 @@
 ## 一、包内有什么
 
 ```
-PS-Spark-1.7.0-dev-win-<日期>/
-├── com.psspark.ps.assistant_1.7.0/   插件本体（manifest.json / index.html / js / icons）
+PS-Spark-1.7.1-dev-win-<日期>/
+├── com.psspark.ps.assistant_1.7.1/   插件本体（manifest.json / index.html / js / icons）
 ├── Install-Windows.bat             一键安装：复制到侧载目录 + 清旧版残留
 ├── INSTALL-Windows.txt             同样的步骤，文字版
 ├── Start-ComfyUI.bat               本地 ComfyUI 启动器（可不用）
 └── LICENSE / NOTICE
 ```
 
-插件 id 是 `com.psspark.ps.assistant`，版本目录 `com.psspark.ps.assistant_1.7.0`。
+插件 id 是 `com.psspark.ps.assistant`，版本目录 `com.psspark.ps.assistant_1.7.1`。
 **不要改 id**：改了会读不到旧配置（Key、预设、历史都在这个 id 下）。
 
 ---
@@ -31,13 +31,13 @@ PS-Spark-1.7.0-dev-win-<日期>/
 3. 双击 `Install-Windows.bat`，确认两次。
 4. 脚本会复制到：
    ```
-   %APPDATA%\Adobe\UXP\Plugins\External\com.psspark.ps.assistant_1.7.0\
+   %APPDATA%\Adobe\UXP\Plugins\External\com.psspark.ps.assistant_1.7.1\
    ```
    并顺手删掉 `com.psspark.ps.assistant_1.0.0`、`com.psspark.*` 等旧目录，避免菜单里出现两个面板。
 
 ### 方式 B · 手动
 
-把 `com.psspark.ps.assistant_1.7.0` 整个文件夹放到 `%APPDATA%\Adobe\UXP\Plugins\External\`。
+把 `com.psspark.ps.assistant_1.7.1` 整个文件夹放到 `%APPDATA%\Adobe\UXP\Plugins\External\`。
 地址栏输入 `%APPDATA%` 回车即可到 Roaming。
 目录里应当**直接**看到 `manifest.json`、`index.html`、`js\`、`icons\`（不要多套一层）。
 

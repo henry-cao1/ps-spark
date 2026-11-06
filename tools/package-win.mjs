@@ -279,6 +279,9 @@ ${devBlock}
   - LAN access: Start-ComfyUI.bat -lan
   - Another port: Start-ComfyUI.bat -port 8189
   - Settings > Local ComfyUI > Add built-in template (text-to-image / reference / inpaint)
+  - Local models are supported, but you adapt the workflow to the files installed
+    on your machine (Adapt local models). The models tested on Windows and on
+    macOS are not the same set, so a preset may need adapting after moving machines.
 
 6. Troubleshooting
   Log:
@@ -286,6 +289,7 @@ ${devBlock}
     Example: ...\\PHSP\\26\\External\\com.psspark.ps.assistant\\PluginData\\psspark_debug.log
   The Diagnostics section at the bottom of the panel shows recent lines.
   When reporting, include: steps + matching log time range + screenshot.
+  Feedback: psspark-feedback@hotmail.com
 
 7. Uninstall
   Delete %APPDATA%\\Adobe\\UXP\\Plugins\\External\\com.psspark.ps.assistant_${ver};
@@ -338,6 +342,8 @@ ${devBlock}
   - 跨机：Start-ComfyUI.bat -lan
   - 换端口：Start-ComfyUI.bat -port 8189
   - 设置 ▸ 本地 ComfyUI ▸ 添加内置模板（文生图 / 参考图 / 局部重绘）
+  - 支持本地模型，但需按本机模型文件自行适配（适配本机模型）；
+    Windows 与 macOS 测试用的本地模型不是同一套，换机器后可能需要重新适配
 
 六、出问题怎么查
   诊断日志：
@@ -345,6 +351,7 @@ ${devBlock}
     例：...\\PHSP\\26\\External\\com.psspark.ps.assistant\\PluginData\\psspark_debug.log
   面板底部「诊断」也能直接看最近日志。
   反馈请带：操作步骤 + 日志对应时间段 + 截图。
+  反馈邮箱：psspark-feedback@hotmail.com
 
 七、卸载
   删掉 %APPDATA%\\Adobe\\UXP\\Plugins\\External\\com.psspark.ps.assistant_${ver} 即可；
