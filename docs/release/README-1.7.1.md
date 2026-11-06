@@ -10,18 +10,26 @@ Licensed under **AGPL-3.0**. Not an Adobe product; not affiliated with or endors
 
 | Platform | Package | Default UI |
 |---|---|---|
-| Windows 10/11 | 1.7.1 build to follow (use the 1.7.0 package in the meantime) | English |
+| Windows 10/11 | `PS-Spark-1.7.1-en-win-2026-11-06.zip` | English |
 | macOS | `PS-Spark-1.7.1-mac-2026-11-06.zip` | English |
 
-The Windows package will be refreshed separately to 1.7.1. The language can be switched at
-runtime under Settings ▸ Language.
+The language can be switched at runtime under Settings ▸ Language.
 
 ## What's new
 
-- Model catalog adds `gpt-image-2.6` and uses it as the default for new installs.
-- Version 1.7.1 aligns the release tag and source archive with the shipped package; 1.7.0 had
-  the 2.6 code only on `main`.
-- Windows 1.7.1 package follows separately.
+- **Windows package** — result files are saved with their real extension: a GIF result is written
+  as `.gif` instead of GIF bytes inside a `.png`. History, thumbnails and previews accept GIF, and
+  data URIs use the correct MIME type, so the preview animates. `gpt-image-2.6` GIF output works
+  end to end; Photoshop places it as a single-frame smart object (use *File ▸ Import ▸ Video
+  Frames to Layers* if you need every frame).
+- **Both packages** — model catalog adds `gpt-image-2.6` and uses it as the default for new
+  installs.
+- Version 1.7.1 aligns the release tag and source archive with the shipped macOS package; 1.7.0
+  had the 2.6 code only on `main`.
+
+> **Windows manifest id:** this Windows build uses `com.psspark.ps.spark`. Its installer removes
+> older `com.psspark.ps.assistant_*` copies, so you will not get two panels, but API keys, presets
+> and history are scoped by id and need to be set up once after upgrading.
 
 ## Features
 
@@ -43,7 +51,7 @@ runtime under Settings ▸ Language.
 ## Install — Windows
 
 1. Download the Windows package above and extract it.
-2. Run `Install-Windows.bat`, or copy the `com.psspark.ps.assistant_1.7.1` folder into
+2. Run `Install-Windows.bat`, or copy the `com.psspark.ps.spark_1.7.1` folder into
    `%APPDATA%\Adobe\UXP\Plugins\External\`.
 3. In Photoshop: Edit ▸ Preferences ▸ Plug-ins ▸ enable **Developer Mode**.
 4. Restart Photoshop, then open **Plugins ▸ PS Spark**.
