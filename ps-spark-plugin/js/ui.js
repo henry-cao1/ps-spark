@@ -32,8 +32,20 @@ function getInstanceState(id) {
 /* ---------- 小组件工具 ---------- */
 
 function el(tag, cls, text) {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
+  /* Windows UXP 对 <button> 用系统控件自绘外观：实测填充被糊成系统灰 #7A7A7A，
+     只在圆角边露出 1px 的 CSS 背景色（表现为"点击框没有填充满"），命中区也只跟文字走。
+     所以统一用 div.btn 自绘；下面把 disabled 属性模拟出来，旧代码 btn.disabled = true 继续有效。 */
+  const isBtn = (tag === "button");
+  const n = document.createElement(isBtn ? "div" : tag);
+  if (isBtn) {
+    n.className = "btn" + (cls ? " " + cls : "");
+    n.setAttribute("role", "button");
+    let dis = false;
+    Object.defineProperty(n, "disabled", {
+      get: function () { return dis; },
+      set: function (v) { dis = !!v; n.classList.toggle("is-disabled", dis); }
+    });
+  } else if (cls) n.className = cls;
   if (text != null) {
     /* 创建即翻译：UXP 里 MutationObserver 不可靠，动态面板必须在生成时就是目标语言 */
     let s = text;
@@ -51,19 +63,30 @@ function el(tag, cls, text) {
 }
 
 /* 折叠块：head 点击切换 body */
-function makeFold(headText, bodyEl) {
+function makeFold(headText, bodyEl, opts) {
+  const o = opts || {};
   const wrap = el("div", "fold");
   const head = el("div", "fold-head");
   head.appendChild(el("span", "chev", "›"));
-  head.appendChild(el("span", null, headText));
+  const label = el("span", null, headText);
+  head.appendChild(label);
   const body = el("div", "fold-body hidden");
   body.appendChild(bodyEl);
+  const setOpen = function (open) {
+    head.classList.toggle("open", !!open);
+    body.classList.toggle("hidden", !open);
+  };
+  /* 展开状态要能被外部指定：提示词填了内容还折叠着，用户会以为「提示词丢了」
+     （重跑/切 Tab 都会重渲染，之前每次都被收回折叠）。 */
+  setOpen(o.open);
   head.addEventListener("click", function () {
-    head.classList.toggle("open");
-    body.classList.toggle("hidden");
+    const open = !head.classList.contains("open");
+    setOpen(open);
+    if (typeof o.onToggle === "function") { try { o.onToggle(open); } catch (e) { /* ignore */ } }
   });
   wrap.appendChild(head);
   wrap.appendChild(body);
+  wrap.__foldLabel = label;
   return wrap;
 }
 
@@ -577,7 +600,9 @@ function insertIntoTextarea(ta, text, onChange) {
 function attachPasteTools(ta, tools, onChange) {
   const btn = el("button", "p-btn", "📋 粘贴");
   btn.type = "button";
-  btn.title = "从系统剪贴板粘贴（UXP 里 Cmd+V 可能无效，用这个）";
+  const KEY = (typeof modKeyHint === "function") ? modKeyHint() : "Cmd";
+  const tipKey = "从系统剪贴板粘贴（UXP 里 " + KEY + "+V 可能无效，用这个）";
+  btn.title = (typeof i18nText === "function") ? i18nText(tipKey) : tipKey;
   btn.addEventListener("click", function () {
     readClipboardText().then(function (txt) {
       if (!txt) { log("剪贴板里没有文本（或剪贴板权限未生效）", "err"); return; }
@@ -596,7 +621,8 @@ function attachPasteTools(ta, tools, onChange) {
         readClipboardText().then(function (txt) {
           if (!txt) return;
           insertIntoTextarea(ta, txt, onChange);
-          log("已从剪贴板粘贴（Cmd+V 未生效的兜底路径）", "info");
+          const msgKey = "已从剪贴板粘贴（" + KEY + "+V 未生效的兜底路径）";
+          log((typeof i18nText === "function") ? i18nText(msgKey) : msgKey, "info");
         });
       }
     }, 180);
@@ -778,7 +804,23 @@ UI.promptSection = function (inst, st) {
         const h = UI.host();
         if (h) UI.refreshRunBar(h, inst);
       }, { ta: ta, onChange: onPromptChange }));
-    card.appendChild(makeFold("补充提示（可选）", wrap));
+    const foldLabel = function () {
+      return "补充提示（可选）" + (String(ta.value || "").trim() ? " · 已填写" : "");
+    };
+    const fold = makeFold(foldLabel(), wrap, {
+      /* 已填过内容 / 上次展开过 → 保持展开，别让用户以为提示词被清空了
+         （「生成失败 → 重新生成」时面板重渲染，旧实现每次都会收回折叠） */
+      open: !!String(st.userText || "").trim() || st.uiPromptOpen === true,
+      onToggle: function (open) {
+        st.uiPromptOpen = open;
+        /* 收起时把「已填写」标出来：提示词还在，只是折叠了 */
+        if (!open && fold.__foldLabel) {
+          fold.__foldLabel.textContent = foldLabel();
+          if (typeof i18nFlush === "function") i18nFlush();
+        }
+      }
+    });
+    card.appendChild(fold);
     return card;
   }
 

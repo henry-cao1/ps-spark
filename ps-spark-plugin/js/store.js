@@ -4,7 +4,8 @@
  * 目录结构（插件数据目录下，仅管理自建目录，绝不触碰其它文件）：
  *   history/jobs.json                    任务索引（最新在前，摘要字段）
  *   history/<jobId>/job.json             任务详情（含参数快照，供"重新生成"跨会话复用）
- *   history/<jobId>/psspark_result.png     结果图
+ *   history/<jobId>/psspark_result.png     结果图（扩展名以真实格式为准，GIF 结果即 .gif）
+ *   history/<jobId>/psspark_result_thumb.png  卡片缩略图（始终 png，长边 256）
  *
  * 原则：一切操作 try/catch + diag——存储失败绝不中断主流程。
  * 清理策略（v1.1 最小版）：索引上限 200 条，超出裁剪最旧（收藏豁免）并静默删除其文件；完整清理 UI 归 v1.3。
@@ -17,7 +18,7 @@ const Store = {
 
 const STORE_MAX_JOBS = 200;
 
-/* ---- 缓存位置（默认：插件数据目录/history；自定义：所选目录/PSSparkHistory） ---- */
+/* ---- 缓存位置（默认：插件数据目录/history；自定义：所选目录/PS SparkHistory） ---- */
 
 const STORE_CUSTOM_ROOT_KEY = "psspark.historyCustomRoot";
 let __storeCustomRootEntry = null; /* null=使用默认位置 / Folder=自定义位置 */
@@ -32,12 +33,25 @@ function __storeSetCustomRootPath(p) {
   } catch (e) { /* ignore */ }
 }
 
-/* 启动时解析自定义位置；目录被移动/删除 → 自动回退默认 + 提示 */
+/* 绝对路径 → file URL。UXP 在 Windows 上只认 file:///C:/… 这种正斜杠三斜杠写法，
+   拼成 "file:" + "C:\Users\…" 会解析失败（mac 上 "/Users/…" 恰好能过，所以只在 Win 暴露）。 */
+function __storeFileUrl(p) {
+  let s = String(p || "").trim().replace(/\\/g, "/");
+  if (!s) return "";
+  if (/^file:/i.test(s)) {
+    s = s.replace(/^file:\/+/i, "");
+    return "file:///" + s.replace(/^\/+/, "");
+  }
+  /* UNC 路径 \\server\share → file://server/share（两个斜杠是主机名，不能转成三斜杠的本地路径） */
+  if (s.indexOf("//") === 0) return "file:" + s;
+  return "file:///" + s.replace(/^\/+/, "");
+}
+
 async function storeResolveRoot() {
   const p = __storeCustomRootPath();
   if (!p) { __storeCustomRootEntry = null; return; }
   try {
-    const ent = await fs.getEntryWithUrl("file:" + p);
+    const ent = await fs.getEntryWithUrl(__storeFileUrl(p));
     if (ent && ent.isFolder) {
       __storeCustomRootEntry = ent;
       diag("store: 使用自定义缓存位置 " + p);
@@ -60,7 +74,7 @@ function storeCustomRootInfo() {
 
 async function __storeHistoryFolder(create) {
   let root = null, sub = "history";
-  if (__storeCustomRootEntry) { root = __storeCustomRootEntry; sub = "PSSparkHistory"; }
+  if (__storeCustomRootEntry) { root = __storeCustomRootEntry; sub = "PS SparkHistory"; }
   else { root = await fs.getDataFolder(); sub = "history"; }
   let h = null;
   try { h = await root.getEntry(sub); } catch (e) { h = null; }
@@ -70,6 +84,28 @@ async function __storeHistoryFolder(create) {
 
 function __storeId() {
   return "j" + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+}
+
+/* 归档缩略图命名：psspark_result.png -> psspark_result_thumb.png（同目录旁挂一张）。
+ * 缩略图只服务历史卡片（长边 256、约 20KB）；插入图层 / 重建必须用原图，
+ * 所以凡是「列目录里的图」「按名找图」的地方都要把它排掉，否则会被当成候选结果。
+ * gif 同样算结果图（gpt-image-2.6 会出 GIF），缩略图统一落成 png 首帧。 */
+function storeThumbName(fileName) {
+  const s = String(fileName || "psspark_result.png");
+  const m = /^(.*)\.(png|jpe?g|webp|gif)$/i.exec(s);
+  return (m ? m[1] : s) + "_thumb.png";
+}
+function storeIsThumbName(name) { return /_thumb\.png$/i.test(String(name || "")); }
+
+/* 去掉扩展名的基名：psspark_result.gif → psspark_result。
+ * 判断「哪张是主结果」要用它，不能写死 .png（GIF 结果就叫 psspark_result.gif）。 */
+function storeNameBase(name) {
+  return String(name || "").replace(/\.[^.]+$/, "");
+}
+
+/* 目录项是不是一张结果图（排除缩略图）。历史扫描 / 兜底找图共用同一套判断。 */
+function storeIsResultImageName(name) {
+  return /\.(png|jpe?g|webp|gif)$/i.test(String(name || "")) && !storeIsThumbName(name);
 }
 
 async function __storeWriteIndex() {
@@ -210,11 +246,11 @@ async function storeCompleteJob(job, entries, extra) {
     if (Array.isArray(entries)) {
       entries.forEach(function (it) {
         if (!it) return;
-        if (it.entry) list.push({ entry: it.entry, file: it.fileName || "psspark_result.png" });
-        else list.push({ entry: it, file: "psspark_result.png" });
+        if (it.entry) list.push({ entry: it.entry, file: it.fileName || (it.entry && it.entry.name) || "psspark_result.png" });
+        else list.push({ entry: it, file: (it && it.name) || "psspark_result.png" });
       });
     } else {
-      list.push({ entry: entries, file: "psspark_result.png" });
+      list.push({ entry: entries, file: (entries && entries.name) || "psspark_result.png" });
     }
   }
   if (list.length) {
@@ -231,6 +267,17 @@ async function storeCompleteJob(job, entries, extra) {
         catch (e2) { diag("store: 结果图 " + list[i].file + " 归档失败 " + e2.message); }
       }
       diag("store: 结果图已归档 -> history/" + job.id + "/ （" + list.length + " 张）");
+      /* 缩略图：只在「结果图此刻已经在画布图层上」时顺手取一张（约 100ms，不新建文档）。
+       * extra.thumb = { docId, layerId, file }；没有图层（例如多候选还没选）就跳过，
+       * 等用户插入那次再补 —— 历史页永远不会为了缩略图去打开图片。 */
+      const tb = extra && extra.thumb;
+      if (tb && tb.layerId != null && typeof writeLayerThumb === "function") {
+        try {
+          await writeLayerThumb(tb.docId, tb.layerId, jd, storeThumbName(tb.file || "psspark_result.png"));
+        } catch (e4) {
+          diag("store: 归档缩略图跳过 -> " + ((e4 && e4.message) || String(e4)));
+        }
+      }
     } catch (e) { diag("store: 结果图归档失败 " + e.message); }
   }
   await __storeWriteJobDetail(job);
@@ -282,8 +329,124 @@ async function storeJobFileEntry(job, fileName) {
     if (!jd) return null;
     let f = null;
     try { f = await jd.getEntry(fileName || "psspark_result.png"); } catch (e) { f = null; }
+    /* 指定名不存在（旧记录 / 归档名与 assets 记录不一致）时，退回目录里实际存在的第一张图：
+     * 缩略图和「插入为新图层」都不该因为一个名字对不上而整条失效。 */
+    if (!f) {
+      try {
+        const items = await jd.getEntries();
+        const imgs = items
+          .filter(function (it) { return !it.isFolder && storeIsResultImageName(it.name); })
+          .map(function (it) { return it.name; })
+          .sort(function (a, b) {
+            const ra = storeNameBase(a) === "psspark_result";
+            const rb = storeNameBase(b) === "psspark_result";
+            if (ra !== rb) return ra ? -1 : 1;
+            return a < b ? -1 : (a > b ? 1 : 0);
+          });
+        if (imgs.length) f = await jd.getEntry(imgs[0]);
+      } catch (e2) { f = null; }
+    }
     return f;
   } catch (e) { diag("store: 读取任务文件失败 " + e.message); return null; }
+}
+
+/* 取某张归档图的缩略图 entry（没有就返回 null）。
+ * 缩略图缺失不影响功能：历史卡片会显示占位，点插入/保存时再补。 */
+async function storeJobThumbEntry(job, fileName) {
+  if (!job || !job.id) return null;
+  try {
+    const h = await __storeHistoryFolder(false);
+    if (!h) return null;
+    let jd = null;
+    try { jd = await h.getEntry(job.id); } catch (e) { jd = null; }
+    if (!jd) return null;
+    try { return await jd.getEntry(storeThumbName(fileName)); } catch (e2) { return null; }
+  } catch (e) { return null; }
+}
+
+/* 任务目录里任意一张缩略图（主图缺、但用户插入过别的候选时用得上）。
+ * 优先 psspark_result_thumb.png，其次文件名排序第一张。
+ * 返回 { entry, file }：file 是这张缩略图对应的**原图**名，点开预览要用它，
+ * 否则会出现「卡片是候选 3、点开却是候选 1」。没有就 null。 */
+async function storeJobAnyThumb(job) {
+  if (!job || !job.id) return null;
+  try {
+    const h = await __storeHistoryFolder(false);
+    if (!h) return null;
+    let jd = null;
+    try { jd = await h.getEntry(job.id); } catch (e) { jd = null; }
+    if (!jd) return null;
+    let items = [];
+    try { items = await jd.getEntries(); } catch (e2) { items = []; }
+    const thumbs = items
+      .filter(function (it) { return !it.isFolder && storeIsThumbName(it.name); })
+      .map(function (it) { return it.name; })
+      .sort();
+    if (!thumbs.length) return null;
+    const pref = storeThumbName("psspark_result.png");
+    const pick = thumbs.indexOf(pref) >= 0 ? pref : thumbs[0];
+    let entry = null;
+    try { entry = await jd.getEntry(pick); } catch (e3) { return null; }
+    /* 缩略图名 → 目录里真实存在的原图名（原图可能是 .png/.jpg/.webp） */
+    const base = pick.replace(/_thumb\.png$/i, "");
+    let file = base + ".png";
+    try {
+      items.forEach(function (it) {
+        if (it.isFolder || storeIsThumbName(it.name)) return;
+        if (String(it.name).replace(/\.[^.]+$/, "") === base) file = it.name;
+      });
+    } catch (e4) { /* 保持默认 .png */ }
+    return { entry: entry, file: file };
+  } catch (e) { return null; }
+}
+
+/* 插入为新图层之后：用刚生成的图层给这张归档图补一张缩略图。
+ * 旧记录（没有缩略图）也是靠这条路径慢慢补上，且不会额外打开任何文档。 */
+async function storeSetJobThumb(job, fileName, docId, layerId) {
+  if (!job || !job.id || layerId == null) return null;
+  const name = fileName || "psspark_result.png";
+  if (storeIsThumbName(name)) return null;
+  try {
+    const h = await __storeHistoryFolder(false);
+    if (!h) return null;
+    let jd = null;
+    try { jd = await h.getEntry(job.id); } catch (e) { jd = null; }
+    if (!jd) return null;
+    if (typeof writeLayerThumb !== "function") return null;
+    return await writeLayerThumb(docId, layerId, jd, storeThumbName(name));
+  } catch (e) {
+    diag("store: 补缩略图跳过 " + name + " -> " + ((e && e.message) || String(e)));
+    return null;
+  }
+}
+
+/* ⚠ 只在用户手动点「补缩略图」时调用（历史页头部），不要自动调。
+ * 它需要临时打开归档图才能缩放，会连续开关文档、画面一直闪；
+ * 新任务在保存时、插入时都已经有缩略图了，只有旧记录需要补。
+ * 已有 → 直接返回；没有 → 排队生成（ps.js 串行队列，内部失败只记日志）。 */
+async function storeEnsureJobThumb(job, fileName, opts) {
+  if (!job || !job.id) return null;
+  const name = fileName || "psspark_result.png";
+  if (storeIsThumbName(name)) return null;
+  const thumbName = storeThumbName(name);
+  try {
+    const h = await __storeHistoryFolder(false);
+    if (!h) return null;
+    let jd = null;
+    try { jd = await h.getEntry(job.id); } catch (e) { jd = null; }
+    if (!jd) return null;
+    try {
+      const had = await jd.getEntry(thumbName);
+      if (had) return had;
+    } catch (eHad) { /* 没有，接着生成 */ }
+    const src = await storeJobFileEntry(job, name);
+    if (!src) return null;
+    if (typeof queueEntryThumb !== "function") return null;
+    return await queueEntryThumb(src, jd, thumbName, !!(opts && opts.priority));
+  } catch (e) {
+    diag("store: 缩略图补生成异常 " + name + " -> " + ((e && e.message) || String(e)));
+    return null;
+  }
 }
 
 /* 列出某个任务实际归档的图片文件。
@@ -300,7 +463,8 @@ async function storeJobAssetNames(job) {
       if (jd) {
         const items = await jd.getEntries();
         items.forEach(function (it) {
-          if (!it.isFolder && /\.(png|jpe?g|webp)$/i.test(it.name)) names.push(it.name);
+          /* 缩略图是给卡片看的，不是结果图：混进来会让候选多出一张、插入插入到缩略图 */
+          if (!it.isFolder && storeIsResultImageName(it.name)) names.push(it.name);
         });
       }
     }
@@ -309,8 +473,9 @@ async function storeJobAssetNames(job) {
     job.assets.forEach(function (a) { if (a && a.file) names.push(a.file); });
   }
   names.sort(function (a, b) {
-    if (a === "psspark_result.png") return -1;
-    if (b === "psspark_result.png") return 1;
+    const ra = storeNameBase(a) === "psspark_result";
+    const rb = storeNameBase(b) === "psspark_result";
+    if (ra !== rb) return ra ? -1 : 1;
     return a < b ? -1 : (a > b ? 1 : 0);
   });
   return names;
@@ -389,8 +554,8 @@ async function storeSetCustomRoot(folderEntry) {
   try {
     const oldH = await __storeHistoryFolder(false);
     let dst = null;
-    try { dst = await folderEntry.getEntry("PSSparkHistory"); } catch (e) { dst = null; }
-    if (!dst) dst = await folderEntry.createFolder("PSSparkHistory");
+    try { dst = await folderEntry.getEntry("PS SparkHistory"); } catch (e) { dst = null; }
+    if (!dst) dst = await folderEntry.createFolder("PS SparkHistory");
     if (oldH) await __storeCopyTree(oldH, dst);
     __storeSetCustomRootPath(folderEntry.nativePath || "");
     __storeCustomRootEntry = folderEntry;

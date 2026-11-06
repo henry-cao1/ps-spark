@@ -348,8 +348,8 @@ function initDropdown(id, options, value, onChange, opts) {
 
 function initSettingsDropdowns() {
   initDropdown("imgBaseUrl", [
-    ["https://grsai.dakka.com.cn", "国内 (dakka)"],
-    ["https://grsaiapi.com", "全球 (grsaiapi)"],
+    ["https://grsai.dakka.com.cn", "国内线路"],
+    ["https://grsaiapi.com", "全球线路"],
     ["__custom__", "自定义…"]
   ], "https://grsai.dakka.com.cn", function (v) {
     const custom = v === "__custom__";
@@ -357,7 +357,7 @@ function initSettingsDropdowns() {
     if (!custom) saveImageServiceFromForm(false);
   });
 
-  /* 图像模型：下拉可选（gpt-image / nano-banana 系列，文档 2026-11 版）；尺寸/质量选项随模型联动 */
+  /* 图像模型：下拉可选（gpt-image 系列，文档 2026-11 版，含 2.6）；尺寸/质量选项随模型联动 */
   initDropdown("imgModel", imgModelOptions(), "gpt-image-2.6", function (v) {
     const custom = v === "__custom__";
     $("imgModelCustom").classList.toggle("hidden", !custom);
@@ -521,7 +521,7 @@ function refreshTextVisionNote() {
 
 /* ---- 下拉选项构造 ---- */
 
-/* 图像模型选项行（含系列分组标题，便于在模型列表里定位） */
+/* 图像模型选项行（含系列分组标题，便于在 16 个模型里定位） */
 function imageModelOptionRows() {
   const rows = [];
   [["gpt", "gpt-image 系列"], ["nano", "nano-banana 系列"]].forEach(function (g) {
@@ -837,7 +837,7 @@ function updateVersionInfo() {
   const brandTr = (typeof t === "function") ? t : function (x) { return x; };
   el.textContent = brandName + (brandVer ? (" · v" + brandVer) : "") +
     " · " + brandTr("许可证") + " " + brandLic + " · " + brandTr("密钥与配置仅存于本机") + " · " +
-    ((brandRepo && brandPub) ? brandTr("已开源") : brandTr("未开源"));
+    ((brandRepo && brandPub) ? brandTr("已开源") : brandTr("即将开源"));
 }
 
 async function fillKeys() {
@@ -1164,18 +1164,24 @@ async function testComfyConnection() {
   setStatusEl("comfyStatus", "连接中…");
   const urls = comfyPresetUrls(p);
   const parts = [];
-  let ok = 0;
+  let ok = 0, missCount = 0;
   for (let i = 0; i < urls.length; i++) {
     const host = comfyHostOf(urls[i]);
     const r = await comfyProbe(urls[i]);
     if (!r.ok) { parts.push(host + " 离线（" + r.error + "）"); continue; }
     ok++;
     const miss = await comfyCheckModels(p, urls[i]);
-    if (miss.length) parts.push(host + " 在线但缺 " + miss.join("、"));
+    if (miss.length) { missCount += miss.length; parts.push(host + " 在线但缺 " + miss.join("、")); }
     else parts.push(host + " 在线 " + r.version);
   }
-  const prefix = ok === urls.length ? "连接正常 ✓ " : (ok ? "部分可用：" : "连接失败：");
-  setStatusEl("comfyStatus", prefix + parts.join("；"), ok === urls.length ? "ok" : "err");
+  /* 地址通 ≠ 能用：缺节点/缺模型文件时本机照样跑不出图，
+     不能报「连接正常 ✓」自相矛盾，要降级成告警并标红，提示去装依赖 */
+  let prefix, level;
+  if (ok === 0) { prefix = "连接失败："; level = "err"; }
+  else if (missCount) { prefix = "地址已连通，但依赖不全（" + missCount + " 项）："; level = "err"; }
+  else if (ok === urls.length) { prefix = "连接正常 ✓ "; level = "ok"; }
+  else { prefix = "部分可用："; level = "err"; }
+  setStatusEl("comfyStatus", prefix + parts.join("；"), level);
   btn.disabled = false;
 }
 
@@ -1440,7 +1446,7 @@ async function comfyProbeAll() {
       if (!r.ok) { anyBad = true; parts.push(host + " 离线（" + r.error + "）"); continue; }
       anyOk = true;
       const miss = await comfyCheckModels(p, urls[k]);
-      if (miss.length) { anyBad = true; parts.push(host + " 缺 " + miss.join(" / ")); }
+      if (miss.length) { anyBad = true; parts.push(host + " 缺 " + miss.join("、")); }
       else parts.push(host + " 在线 " + r.version);
     }
     if (!anyOk || anyBad) bad++;
@@ -1456,7 +1462,7 @@ async function exportComfyPresets() {
   try {
     saveComfyFromForm(true);
     const store = getComfyStore();
-    const f = await fs.getFileForSaving("ps-spark-comfy-presets.json", { types: ["json"] });
+    const f = await fs.getFileForSaving("psspark-comfy-presets.json", { types: ["json"] });
     if (!f) return;
     await f.write(JSON.stringify(store, null, 1), { format: formats.utf8 });
     setStatusEl("comfyStatus", "已导出 " + store.presets.length + " 个预设", "ok");
@@ -2447,6 +2453,8 @@ async function placeCandidateForRun(run, idx) {
     c.layerId = (lastPlacedLayer && lastPlacedLayer.id) || null;
   }, "PS Spark: 插入候选 " + (idx + 1), 2);
   c.inserted = true;
+  /* 候选落图后顺手把这张的缩略图补上（多候选任务里，选中的那张才需要在历史里露脸） */
+  noteAssetThumb(run.job, c.fileName, run.docId, c.layerId);
   log("候选 " + (idx + 1) + " 已插入为新图层 ✓", "ok");
   return true;
 }
@@ -2752,6 +2760,8 @@ async function runCurrentInstance(opts) {
     lastExportUri = run.exportUri;
     lastLayerName = run.layerName;
 
+    /* 主结果文件名：以 entry.name 为准（GIF 结果是 psspark_result.gif，不是写死的 .png） */
+    const mainFile = (run.entry && run.entry.name) || "psspark_result.png";
     lastRun = {
       instId: inst.id, snap: snap,
       statusText: "成功 · 用时 " + secs + " 秒" + (multiCands ? (" · 已生成 " + multiCands.length + " 张候选" + (multiCands.length > 1 ? "，选择一张插入" : "")) : ""),
@@ -2763,7 +2773,7 @@ async function runCurrentInstance(opts) {
       placeTarget: run.placeTarget,
       /* 候选列表（多候选待选 / 单张已插入）——统一由结果卡渲染 */
       cands: multiCands || (run.entry
-        ? [{ entry: run.entry, fileName: "psspark_result.png", url: null, thumbUri: null, inserted: true, layerName: run.layerName, layerId: run.layerId || null }]
+        ? [{ entry: run.entry, fileName: mainFile, url: null, thumbUri: null, inserted: true, layerName: run.layerName, layerId: run.layerId || null }]
         : []),
       layerId: run.layerId || null,
       multi: run.multi,
@@ -2775,11 +2785,16 @@ async function runCurrentInstance(opts) {
     try {
       const entriesForStore = multiCands
         ? multiCands.map(function (c) { return { entry: c.entry, fileName: c.fileName }; })
-        : (run.entry ? [{ entry: run.entry, fileName: "psspark_result.png" }] : []);
+        : (run.entry ? [{ entry: run.entry, fileName: mainFile }] : []);
       await storeCompleteJob(job, entriesForStore, {
         layerName: run.layerName, secs: secs,
         placeTarget: run.placeTarget,
-        prompt: buildFinalPrompt(inst, snap.userText, null, snap.params, snap.tplOverride, (result && result.extra) || null)
+        prompt: buildFinalPrompt(inst, snap.userText, null, snap.params, snap.tplOverride, (result && result.extra) || null),
+        /* 结果层此刻就在画布上 → 顺手取一张缩略图（不新建文档、不开图）。
+         * 多候选时还没落任何一层（等用户选一张插入时再补），所以只在单结果时给。 */
+        thumb: (!multiCands && run.layerId != null)
+          ? { docId: ctx.docId, layerId: run.layerId, file: mainFile }
+          : null
       });
     } catch (e) { diag("store complete warn: " + e.message); }
   } catch (e) {
@@ -2953,8 +2968,10 @@ async function runGenerationsMulti(inst, snap, ctx, n, uris, target, extra) {
     try {
       const fileName = candFileName(i);
       const entry = await downloadResultToEntry(urls[i], fileName);
+      /* 用 entry.name：下载会按真实格式改扩展名（GIF 结果 → psspark_cand_2.gif），
+       * 后续归档 / 历史缩略图 / 再次插入都依赖这个名字 */
       cands.push({
-        entry: entry, fileName: fileName, url: urls[i], thumbUri: null, inserted: false,
+        entry: entry, fileName: (entry && entry.name) || fileName, url: urls[i], thumbUri: null, inserted: false,
         layerName: layerNameFor(inst, snap.userText || prompt) + (urls.length > 1 ? " #" + (i + 1) : "")
       });
     } catch (e) {
@@ -3233,6 +3250,8 @@ async function reinsertLastRun(instId) {
     await core.executeAsModal(async function () {
       await placeEntryAsLayer(lastRun.entry, lastRun.placeTarget || null, (lastRun.layerName || "AI 结果") + "（再插入）");
     }, { commandName: "PS Spark: 再次插入结果" });
+    noteAssetThumb(lastRun.job, (lastRun.entry && lastRun.entry.name) || "psspark_result.png", app.activeDocument.id,
+      (lastPlacedLayer && lastPlacedLayer.id) || null);
     log("已再次插入结果图层", "ok");
   } catch (e) {
     diag("reinsert warn: " + ((e && e.stack) || String(e)));
@@ -3306,6 +3325,14 @@ function renderHistoryView() {
       chips.appendChild(ch);
     });
 
+  /* 手动补缩略图：只给旧记录用（新的在保存/插入时已有）。
+   * 归档图在磁盘上，UXP 只能靠「临时打开一张再缩放」取像素，所以必须由用户点，不自动跑。 */
+  const bf = el("div", "chip" + (HIST_BACKFILL.busy ? " active" : ""),
+    HIST_BACKFILL.busy ? "补图中…" : "补缩略图");
+  bf.title = "为缺缩略图的旧记录补图（会逐张短暂打开归档图片）";
+  bf.addEventListener("click", function () { histBackfillMissing(); });
+  chips.appendChild(bf);
+
   /* 功能筛选（下拉） */
   if (filterRow) {
     filterRow.innerHTML = "";
@@ -3344,6 +3371,174 @@ function renderHistoryView() {
   }
 }
 
+/* ================= 历史卡片缩略图（C-01） =================
+ * 卡片只读归档目录里的 <name>_thumb.png（长边 256，约 20KB）；原图仅在「点击放大」时才读。
+ * 之前每条卡片都把原图（1.8MB，多候选 4~5 张）读成全量 data URI 挂到 img.src，
+ * 24 条记录一次要读 300MB+，base64 后几百 MB 字符串留在内存里 —— 历史页因此卡死数分钟。
+ *
+ * 缩略图在「保存」和「插入」两个时刻就写好了（那时图层本来就在画布上，取样几乎零成本）。
+ * 历史页自己绝不生成缩略图：不打开文档、不排队、不闪屏、不占模态。
+ * 旧记录没有缩略图 → 显示占位；插入一次会自动补上，或在头部点「补缩略图」批量补（手动触发）。
+ */
+const HIST_THUMB = {
+  cache: new Map(),     /* key -> data URI（LRU，最多 80 条 ≈ 2MB） */
+  max: 80
+};
+
+function histThumbKey(job, fileName) {
+  return String((job && job.id) || "") + "|" + String(fileName || "psspark_result.png");
+}
+
+function histThumbGet(k) {
+  const v = HIST_THUMB.cache.get(k);
+  if (!v) return null;
+  HIST_THUMB.cache.delete(k); HIST_THUMB.cache.set(k, v); /* 命中即置新，实现 LRU */
+  return v;
+}
+
+function histThumbPut(k, uri) {
+  if (!k || !uri) return;
+  HIST_THUMB.cache.delete(k);
+  HIST_THUMB.cache.set(k, uri);
+  while (HIST_THUMB.cache.size > HIST_THUMB.max) {
+    const oldest = HIST_THUMB.cache.keys().next().value;
+    HIST_THUMB.cache.delete(oldest);
+  }
+}
+
+/* 插入/补图之后清掉缓存，下次渲染就会读新写的缩略图 */
+function histThumbForget(job, fileName) {
+  HIST_THUMB.cache.delete(histThumbKey(job, fileName));
+}
+
+/* 插入完成后顺手给这张归档图补一张缩略图：图层已经在画布上了，取样几乎零成本、
+ * 不打开任何文档。旧记录（早期没有缩略图）就是靠这条路径自动补齐的。
+ * 不 await：插入成功提示不该等它；失败只记日志。 */
+function noteAssetThumb(job, fileName, docId, layerId) {
+  if (!job || !job.id || layerId == null) return;
+  const name = fileName || "psspark_result.png";
+  storeSetJobThumb(job, name, docId, layerId).then(function (te) {
+    if (!te) return;
+    histThumbForget(job, name);
+    diag("thumb: 已补齐 " + job.id + "/" + name);
+  }).catch(function (e) {
+    diag("thumb: 补图失败 " + name + " -> " + ((e && e.message) || String(e)));
+  });
+}
+
+/* 读缩略图（内存缓存 → 归档文件）。
+ * allowAny：主图没有就退到目录里任意一张缩略图（多候选任务里用户插入的是第 3 张时，
+ * 卡片主图也能有图）。返回 { uri, file }，file 是这张缩略图对应的**原图**名 ——
+ * 点图放大时要用它，否则「缩略图是第 3 张、点开却是第 1 张」。 */
+async function histThumbUri(job, fileName, allowAny) {
+  const key = histThumbKey(job, fileName);
+  const hit = histThumbGet(key);
+  if (hit) return { uri: hit, file: fileName };
+  let te = null, realFile = fileName;
+  try { te = await storeJobThumbEntry(job, fileName); } catch (e) { te = null; }
+  if (!te && allowAny) {
+    try {
+      const any = await storeJobAnyThumb(job);
+      if (any && any.entry) { te = any.entry; realFile = any.file || fileName; }
+    } catch (e2) { te = null; }
+  }
+  if (!te) return null;
+  try {
+    const uri = await fileToDataURI(te);
+    histThumbPut(key, uri);
+    return { uri: uri, file: realFile };
+  } catch (e3) {
+    diag("hist thumb read warn: " + ((e3 && e3.message) || String(e3)));
+    return null;
+  }
+}
+
+/* 给卡片图填缩略图。没有就留占位 —— 绝不回退去读原图，也绝不为它打开图片。
+ * allowAny=true 用于卡片主图（主图缺图时用同任务其它候选的缩略图）；候选小图不传。 */
+async function histFillImage(job, fileName, img, allowAny) {
+  if (!img) return;
+  img.classList.add("hj-loading");
+  let got = null;
+  try { got = await histThumbUri(job, fileName, allowAny); } catch (e) { got = null; }
+  if (!got) {
+    /* 归档写入与卡片渲染可能只差几十毫秒（拆图连续落图）：等一拍再找一次 */
+    await new Promise(function (r) { setTimeout(r, 400); });
+    try { got = await histThumbUri(job, fileName, allowAny); } catch (e2) { got = null; }
+  }
+  img.classList.remove("hj-loading");
+  if (got && got.uri) {
+    img.src = got.uri;
+    /* 记下这张缩略图对应的原图名：点开预览时要和缩略图是同一张 */
+    if (got.file) img._histFile = got.file;
+    img.classList.remove("hj-noimg");
+    img.removeAttribute("title");
+    return;
+  }
+  img.classList.add("hj-noimg");
+  img.title = "未生成缩略图（插入一次即自动生成）";
+}
+
+/* ===== 手动批量补缩略图（只给旧记录用）=====
+ * 归档图在磁盘上，UXP 没有任何「从文件解码图片」的接口，只能临时打开一张再缩放 ——
+ * 所以这件事绝不在打开历史页时自动做（那就是之前「打开历史页，图片一张张闪」的原因）。
+ * 用户点了才跑，逐张处理、可被新任务打断。 */
+const HIST_BACKFILL = { busy: false };
+
+async function histBackfillMissing() {
+  if (!IS_UXP) { log("请在 Photoshop 面板中操作", "err"); return; }
+  if (HIST_BACKFILL.busy) return;
+  if (running) { log("有新任务在跑，等结束再补缩略图", "err"); return; }
+  HIST_BACKFILL.busy = true;
+  let done = 0, tried = 0;
+  try {
+    const scope = (Store.jobs || []).slice(0, 30); /* 与列表展示范围一致，从新到旧 */
+    log("补缩略图：会逐张短暂打开归档图片，完成前请勿操作 PS", "ok");
+    startProgress("补缩略图 0 张…");
+    for (let i = 0; i < scope.length; i++) {
+      if (running) { log("检测到新任务，已暂停补缩略图（补了 " + done + " 张）", "err"); break; }
+      const job = scope[i];
+      let names = [];
+      try { names = await storeJobAssetNames(job); } catch (e0) { names = []; }
+      if (!names.length) continue;
+      /* 主图按「基名」认，不认死 .png —— GIF 结果归档后叫 psspark_result.gif */
+      const main = names.filter(function (n) { return storeNameBase(n) === "psspark_result"; })[0] || names[0];
+      let had = null;
+      try { had = await storeJobThumbEntry(job, main); } catch (e1) { had = null; }
+      if (had) continue;               /* 已有，跳过（不打开图片） */
+      tried++;
+      startProgress("补缩略图 " + done + "/" + tried + "…");
+      let te = null;
+      try { te = await storeEnsureJobThumb(job, main, { priority: true }); } catch (e2) { te = null; }
+      if (!te) continue;
+      try {
+        const uri = await fileToDataURI(te);
+        histThumbPut(histThumbKey(job, main), uri);
+        done++;   /* 主图补齐 → 下一次渲染直接读缓存 */
+      } catch (e3) { /* 读失败就下次再补 */ }
+    }
+    log("补缩略图完成：新补 " + done + " 张" + (tried > done ? ("，失败 " + (tried - done) + " 张") : ""), "ok");
+    renderHistoryView();
+  } catch (e) {
+    log("补缩略图失败：" + ((e && e.message) || String(e)), "err");
+  } finally {
+    HIST_BACKFILL.busy = false;
+    stopProgress();
+  }
+}
+
+/* 点击卡片图：这时才读原图（大图只此一次，且是用户主动触发） */
+async function histOpenFull(job, fileName, label) {
+  try {
+    const e = await storeJobFileEntry(job, fileName || "psspark_result.png");
+    if (!e) { log("历史图缺失（可能已被清理）", "err"); return; }
+    const uri = await fileToDataURI(e);
+    openImagePreview(uri, label || ((job.layerName || "结果") + " · " + (fileName || "结果图")));
+  } catch (e2) {
+    diag("hist preview warn: " + ((e2 && e2.message) || String(e2)));
+    log("无法打开历史图：" + ((e2 && e2.message) || String(e2)), "err");
+  }
+}
+
 function historyJobCard(job) {
   const card = el("div", "hj-card");
   const top = el("div", "hj-top");
@@ -3370,23 +3565,16 @@ function historyJobCard(job) {
   top.appendChild(info);
   card.appendChild(top);
 
-  /* 缩略图 + 候选列表（异步加载归档文件）：多候选逐张展示——点图放大预览，↧ 插入该张 */
+  /* 缩略图 + 候选列表：只读缩略图（见 histFillImage），原图留到点击放大时再读。
+   * 多候选逐张展示——点图放大预览，↧ 插入该张 */
   if (job.assets && job.assets.length) {
     const assetList = job.assets;
-    (async function () {
-      try {
-        const f = await storeJobFileEntry(job);
-        if (f) {
-          const uri = await fileToDataURI(f);
-          img.src = uri;
-          img.title = "点击放大预览";
-          img.style.cursor = "pointer";
-          img.addEventListener("click", function () {
-            openImagePreview(uri, (job.layerName || "结果") + " · 第 1 张");
-          });
-        }
-      } catch (e) { /* ignore */ }
-    })();
+    const mainFile = assetList[0].file || "psspark_result.png";
+    img.addEventListener("click", function () {
+      const f = img._histFile || mainFile;
+      histOpenFull(job, f, (job.layerName || "结果") + " · " + (f === mainFile ? "第 1 张" : f));
+    });
+    histFillImage(job, mainFile, img, true);
     if (assetList.length > 1) {
       const cands = el("div", "hj-cands");
       assetList.forEach(function (a, ai) {
@@ -3404,18 +3592,10 @@ function historyJobCard(job) {
         });
         cell.appendChild(ins);
         cell.appendChild(el("div", "hj-cand-cap", "第 " + (ai + 1) + " 张"));
-        (async function () {
-          try {
-            const f2 = await storeJobFileEntry(job, a.file);
-            if (f2) {
-              const uri2 = await fileToDataURI(f2);
-              im2.src = uri2;
-              im2.addEventListener("click", function () {
-                openImagePreview(uri2, (job.layerName || "结果") + " · 第 " + (ai + 1) + " 张");
-              });
-            }
-          } catch (e) { /* ignore */ }
-        })();
+        im2.addEventListener("click", function () {
+          histOpenFull(job, a.file, (job.layerName || "结果") + " · 第 " + (ai + 1) + " 张");
+        });
+        histFillImage(job, a.file, im2);
         cands.appendChild(cell);
       });
       card.appendChild(cands);
@@ -3489,17 +3669,13 @@ function historyJobCard(job) {
         return { id: job.id + "-a" + (i + 1), form: "single", file: n, status: "done" };
       });
       setInsState(running ? "running" : (job.status === "success" ? "ok" : "partial"));
-      /* 顺带把缩略图补上（文件名取实际扫到的第一张） */
-      storeJobFileEntry(job, names[0]).then(function (f) {
-        if (!f) return;
-        fileToDataURI(f).then(function (uri) {
-          img.classList.remove("hj-noimg");
-          img.src = uri;
-          img.title = "点击放大预览";
-          img.style.cursor = "pointer";
-          img.addEventListener("click", function () { openImagePreview(uri, (job.layerName || "结果") + " · 第 1 张"); });
-        });
-      }).catch(function () { /* ignore */ });
+      /* 顺带补缩略图（文件名取实际扫到的第一张） */
+      img.classList.remove("hj-noimg");
+      img.addEventListener("click", function () {
+        const f = img._histFile || names[0];
+        histOpenFull(job, f, (job.layerName || "结果") + " · " + (f === names[0] ? "第 1 张" : f));
+      });
+      histFillImage(job, names[0], img, true);
     }).catch(function () { setInsState("noimg"); });
   }
   const regen = el("button", null, "重新生成");
@@ -3526,9 +3702,15 @@ async function historyReinsert(job, fileName) {
     const entry = await storeJobFileEntry(job, fileName);
     if (!entry) throw new Error("历史文件缺失（可能已被清理）");
     const docId = app.activeDocument.id;
+    /* 智能对象跟随「设置 ▸ 默认参数」（默认开）。
+     * 这里曾写死 smartObject:false —— 历史插入的层一律被栅格化成像素层，
+     * 与结果卡/候选插入（默认智能对象）行为不一致，用户看到的就是「从历史插入不是智能对象」。 */
+    const wantSO = getDefaults().smartObject !== false;
     await execModal(async function () {
-      await placeEntryAsLayer(entry, job.placeTarget || null, (job.layerName || "AI 结果") + "（历史插入）", null, docId);
+      await placeEntryAsLayer(entry, job.placeTarget || null, (job.layerName || "AI 结果") + "（历史插入）", null, docId, { smartObject: wantSO });
     }, "PS Spark: 历史插入结果", 3);
+    if (!wantSO) log("提示：当前设置关闭了「结果以智能对象插入」，插入的是像素层", "err");
+    noteAssetThumb(job, fileName, docId, (lastPlacedLayer && lastPlacedLayer.id) || null);
     log("已从历史插入结果图层", "ok");
   } catch (e) {
     diag("history reinsert warn: " + ((e && e.stack) || String(e)));
@@ -3648,7 +3830,7 @@ function renderDecompView() {
     if (typeof isNanoModel === "function" && isNanoModel(resolveModel("decomp"))) {
       mcard.appendChild(el("div", "dim-note warn-note",
         "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——" +
-        "建议改用 gpt-image-2 / 2.5 / 2.6 系列。"));
+        "建议改用 gpt-image-2 / 2.5 系列。"));
     }
   } catch (eNano) { /* 模型判断失败不影响面板 */ }
   host.appendChild(mcard);
@@ -3709,15 +3891,22 @@ function renderDecompStep1(host) {
   pvRow.appendChild(bPv);
   card.appendChild(pvRow);
 
-  /* 补充说明（可选）：留空即完全由模型看图判断 */
-  card.appendChild(el("div", "card-title", "补充说明（可选）"));
+  /* 补充说明（可选）：留空即完全由模型看图判断。
+   * 标题要标「已填写」：失败后点「再拆一张」会回到这里，用户要能一眼看出内容还在，
+   * 而不是以为提示词又丢了、重新写一遍。 */
   const ta = document.createElement("textarea");
   ta.className = "ta-prompt";
   ta.value = d.desc;
   ta.placeholder = "留空 = 完全由模型看图判断。也可补充偏好，例：只拆文字和 logo / 主体拆成人物与道具两层 / 忽略背景杂物";
   autoGrowTa(ta, 116, d.desc);
-  ta.addEventListener("input", function () { d.desc = ta.value; });
-  ta.addEventListener("change", function () { d.desc = ta.value; });
+  const descTitle = el("div", "card-title", "补充说明（可选）" + (String(d.desc || "").trim() ? " · 已填写" : ""));
+  const syncDescTitle = function () {
+    descTitle.textContent = "补充说明（可选）" + (String(ta.value || "").trim() ? " · 已填写" : "");
+    if (typeof i18nFlush === "function") i18nFlush();
+  };
+  ta.addEventListener("input", function () { d.desc = ta.value; syncDescTitle(); });
+  ta.addEventListener("change", function () { d.desc = ta.value; syncDescTitle(); });
+  card.appendChild(descTitle);
   card.appendChild(ta);
 
   const vModel = resolveVisionModel();
@@ -4059,8 +4248,12 @@ function renderDecompStep2(host) {
     }
     row.appendChild(info);
 
+    /* ×（移除）/ 背景徽标放进名称行：整行 align-items:center，
+     * 才能和名称输入框、↑↓▸ 按钮在一条水平线上。
+     * 之前挂在 .dc-layer 上（align-items:flex-start），会被顶到行的最上沿，
+     * 看起来「叉没对齐」。 */
     if (isBg) {
-      row.appendChild(el("span", "dc-badge", "背景·最后"));
+      row1.appendChild(el("span", "dc-badge", "背景·最后"));
     } else {
       const rm = el("button", "dc-rm", "×");
       rm.title = "移除该层";
@@ -4069,7 +4262,7 @@ function renderDecompStep2(host) {
         if (idx >= 0) d.layers.splice(idx, 1);
         renderDecompView();
       });
-      row.appendChild(rm);
+      row1.appendChild(rm);
     }
     card.appendChild(row);
   });
@@ -4126,15 +4319,35 @@ function renderDecompStep3(host) {
     });
     row.appendChild(cancel);
   } else {
-    const again = el("button", null, "再拆一张 / 重新开始");
+    /* 「再拆一张」= 失败/不满意后重来。**必须保留用户已经填过的东西**：
+     * 补充说明、拆图对象、导出好的画面预览、以及蓝图里逐条写的元素名/描述。
+     * 旧实现整体重置成初始状态，用户看到的就是「提示词没了，得从头再写一遍」。
+     * 想彻底重来用旁边的「全部清空」。 */
+    const again = el("button", null, "再拆一张（保留描述与蓝图）");
+    again.title = "保留补充说明、拆图对象和蓝图里的元素，只清空上一次的生成结果";
     again.addEventListener("click", function () {
+      const p = App.decomp || {};
+      App.decomp = {
+        step: (p.layers && p.layers.length) ? 2 : 1,
+        src: p.src || "canvas",
+        desc: String(p.desc || ""),
+        imgUri: p.imgUri || null, imgW: p.imgW || 0, imgH: p.imgH || 0, imgLab: p.imgLab || "",
+        layers: Array.isArray(p.layers) ? p.layers : [],
+        results: [], running: false, cancel: false, outDocName: "", msg: null
+      };
+      renderDecompView();
+    });
+    row.appendChild(again);
+    const wipe = el("button", "secondary", "全部清空");
+    wipe.title = "连补充说明和蓝图一起清空，回到第一次使用的状态";
+    wipe.addEventListener("click", function () {
       App.decomp = {
         step: 1, src: "canvas", desc: "", imgUri: null, imgW: 0, imgH: 0, imgLab: "",
         layers: [], results: [], running: false, cancel: false, outDocName: "", msg: null
       };
       renderDecompView();
     });
-    row.appendChild(again);
+    row.appendChild(wipe);
   }
   host.appendChild(row);
 
@@ -4344,12 +4557,15 @@ async function startDecomp() {
 
     /* 2b) 先把原图复制进目标文档最底层，作为对位/参考层（不参与建组） */
     let refLayerOk = false;
+    /* 参考层 id 必须锁存：后续写入/抠色会不停切换活动层，再想「现查哪层是原图」已经查不准了 */
+    let refLayerId = null;
     try {
       await execModal(async function () {
         await placeEntryAsLayer(baseEntry, { left: 0, top: 0, width: W, height: H }, "原图（参考）", null, outId);
+        try { refLayerId = (lastPlacedLayer && lastPlacedLayer.id != null) ? lastPlacedLayer.id : null; } catch (eR0) { refLayerId = null; }
       }, "PS Spark: 拆图放入原图参考层", 3);
       refLayerOk = true;
-      log("原图已放入目标文档最底层（参考层）");
+      log("原图已放入目标文档最底层（参考层）" + (refLayerId != null ? "（id=" + refLayerId + "）" : ""));
     } catch (eRef) {
       diag("decomp: 原图参考层写入失败（不阻塞拆图）: " + ((eRef && eRef.message) || String(eRef)));
       log("⚠ 原图参考层写入失败（不影响拆图）：" + ((eRef && eRef.message) || String(eRef)), "err");
@@ -4453,17 +4669,32 @@ async function startDecomp() {
     for (let k = 0; k < nConc; k++) ws.push(reqWorker());
     await Promise.all(ws);
 
-    /* —— 3a-2) 失败层串行补做一次（并发可能撞限流，串行重试成功率更高） —— */
+    /* —— 3a-2) 失败层串行补做（带退避，最多 2 次） ——
+     * 实测失败原因几乎都是服务端限流：HTTP 400「excessive system load」/
+     * 「get image url failed」。这类错误立刻重试必然再撞一次（日志里 39 秒内连撞两道），
+     * 退避 6 秒 / 20 秒后同一请求就能过。参数类错误（size 不支持等）已在 requestJob 里自救。 */
     const retry = [];
     layers.forEach(function (L, i) {
       if (!urls[i] && d.results[i].status === "err" && !d.cancel) retry.push(i);
     });
     if (retry.length) {
-      diag("decomp: " + retry.length + " 层首轮失败，串行补做一次");
+      diag("decomp: " + retry.length + " 层首轮失败，串行补做（退避重试）");
       for (let k = 0; k < retry.length; k++) {
         if (d.cancel) break;
-        errN--; /* 首轮已计过一次失败，这里先抵消，成败交给补做结果 */
-        await requestJob(retry[k]);
+        const i = retry[k];
+        const waits = [6, 20];
+        for (let att = 0; att < waits.length && !urls[i]; att++) {
+          if (d.cancel) break;
+          d.results[i].status = "wait";
+          d.results[i].msg = "服务端限流，等待 " + waits[att] + " 秒后重试（" + (att + 1) + "/" + waits.length + "）";
+          renderDecompView();
+          diag("decomp: 补做 [" + layers[i].name + "] 第 " + (att + 1) + "/" + waits.length +
+            " 次，等待 " + waits[att] + " 秒");
+          await makeDocWait(waits[att] * 1000);
+          if (d.cancel) break;
+          errN--; /* 首轮/上次已计过失败，先抵消，成败交给这次结果 */
+          await requestJob(i);
+        }
       }
     }
 
@@ -4493,6 +4724,10 @@ async function startDecomp() {
         let rebuilt = false;
         let keyed = false;
         let keyProbeFailed = false;
+        /* 元素是否被「对回原图位置」（模型常把元素放大居中重画，不对位就会变成"最大摆放"） */
+        let alignNote = "";
+        /* 这一层最终留在画布上的图层 id：归档时用它取缩略图（重建会换层，不能事后靠 activeLayers 查） */
+        let finalLayerId = null;
         await execModal(async function () {
           /* 多文档场景：命令作用到「前台文档」，目标文档不在前台时会莫名报
            * 「命令"建立"/"羽化"当前不可用」。每次写入前强制切回目标文档。 */
@@ -4514,13 +4749,33 @@ async function startDecomp() {
            * 此时魔棒必然点不中，与其报「抠色失败」，不如直接判定并提示换模型。 */
           if (keyModeW) {
             const probe = await decompProbeKeyBg(outId, genId);
-            if (probe && !probe.ok) {
+            /* 只有「底色既不统一、又不像洋红」才判模型没照做。
+             * 实测模型常画「带暗角/渐变的洋红底」，仍属洋红 —— 判失败会让整条抠色被跳过，
+             * 元素层随之没有 alpha，对位与重建也跟着全跳过
+             * （用户看到的就是「元素最大摆放 + 背景颜色还在」）。 */
+            if (probe && !probe.ok && !probe.isMagenta) {
               keyProbeFailed = true;
               probeFailN++;
-              diag("decomp: 生成层四角颜色不统一（spread=" + probe.spread + "，" + probe.hex +
-                "），判定模型未按纯色底输出 → 跳过抠色");
+              diag("decomp: 边框底色不统一且不是洋红（" + probe.hex + "，内点 " +
+                Math.round(probe.inlier * 100) + "%），判定模型未按纯色底输出 → 跳过抠色");
             } else {
-              keyed = await cutLayerByColorKey({ tolerance: 26 });
+              /* 容差按实测噪声放大：底色带渐变时固定 26 会漏掉一圈，抠完留洋红毛边 */
+              const tolW = probe
+                ? Math.max(26, Math.min(64, Math.round(probe.spread * 1.3) + 10))
+                : 26;
+              if (probe && !probe.ok) {
+                diag("decomp: 底色带渐变（内点 " + Math.round(probe.inlier * 100) + "%，p90 " +
+                  probe.spread + "），仍按实测底色 " + probe.hex + " 抠，容差放大到 " + tolW);
+              }
+              /* 传 docId/layerId：魔棒必须打在「刚写入的结果层」上（多文档/并发写入后
+               * 活动层未必是它，打空会误判抠色失败）；keyRgb 用探测到的真实底色，
+               * 魔棒打空时走像素级去底，白底/绿底也能抠。 */
+              keyed = await cutLayerByColorKey({
+                tolerance: tolW,
+                docId: outId,
+                layerId: genId,
+                keyRgb: (probe && probe.rgb) || null
+              });
             }
           }
           /* 元素层：用「模型给的透明通道 + 原图像素」重建，彻底消除生成模型的色调/光照偏移。
@@ -4531,18 +4786,40 @@ async function startDecomp() {
             if (scaled) {
               diag("decomp: 结果图被等比缩放（" + lastPlaceMeta.lw + "×" + lastPlaceMeta.lh + "），跳过原图色彩重建以避免蒙版错位");
             } else if (genId != null) {
+              /* ① 先对位：模型常把元素放大/居中重画，若直接拿它的轮廓去抠原图，抠到的是原图别处的内容
+               *    （用户看到的就是「元素被最大摆放」）。对位只把元素层的 alpha 重采样回原图里的真实
+               *    落点/尺寸，不动颜色；匹配不可信时原样返回，保持旧行为。 */
+              if (refLayerId != null) {
+                const al = await alignElementLayerToOriginal(outId, genId, refLayerId, W, H);
+                /* 对位时若元素层本来没有 alpha（抠色失败/跳过），会顺带把推算出的轮廓写进 alpha，
+                 * 等价于抠色成功 —— 后面的重建与文案都按这个算。 */
+                if (al && al.synthetic) keyed = true;
+                if (al && al.changed) {
+                  alignNote = "对回原图位置（" + Math.round(al.dst.width) + "×" + Math.round(al.dst.height) +
+                    " @ " + Math.round(al.dst.left) + "," + Math.round(al.dst.top) + "）";
+                } else if (al && al.ok === false) {
+                  alignNote = "未对位（原图里找不到可信位置，保留模型缩放）";
+                  diag("decomp: 对位跳过 · " + (al.reason || "未知原因"));
+                }
+              }
+              /* ② 再重建：原图像素 + 对位后的轮廓蒙版 */
               rebuilt = await rebuildLayerWithOriginalPixels(baseEntry, genId, layerName, W, H, outId,
                 { useMask: !!keyed, feather: 1 });
             }
           }
+          /* 落定「这一层最终是哪个图层」（重建成功时是新建的元素层，失败时是生成层） */
+          finalLayerId = (lastPlacedLayer && lastPlacedLayer.id != null) ? lastPlacedLayer.id : null;
         }, "PS Spark: 拆图写入 " + L.name, 3);
         d.results[i].status = "ok";
         d.results[i].msg = "用时 " + (secsArr[i] || 0) + " 秒" +
+          (alignNote ? " · " + alignNote : "") +
           (keyModeW
             ? (keyed ? " · 纯色底抠图"
-              : (keyProbeFailed ? " · 模型未给纯色底" : " · 抠色失败（保留模型输出）"))
+              : (keyProbeFailed ? " · 模型未给纯色底" : " · 抠色失败"))
             : "") +
-          (isBg(L) ? "" : (rebuilt ? " · 原图色彩" : " · 模型颜色"));
+          /* 说清楚这层到底是什么：抠色没成功时留下的是「整幅生成图」，
+           * 它会盖住原图、看起来像「贴在最大尺寸上」——不是定位算法的问题。 */
+          (isBg(L) ? "" : (rebuilt ? " · 原图色彩" : (keyed ? " · 模型颜色" : " · 整幅保留（未抠出）")));
         okN++;
         /* 归档到历史（每层一条，可在历史 Tab 重新插入） */
         try {
@@ -4550,7 +4827,9 @@ async function startDecomp() {
           const job = storeCreateJob(fakeInst, { userText: "", tplOverride: "", params: {}, locate: {} }, resolveModel("decomp"));
           await storeCompleteJob(job, entry, {
             layerName: layerName, secs: secsArr[i] || 0,
-            placeTarget: { left: 0, top: 0, width: W, height: H }, prompt: prompt
+            placeTarget: { left: 0, top: 0, width: W, height: H }, prompt: prompt,
+            /* 元素层刚落在画布上 → 顺手存缩略图（不开图、不闪） */
+            thumb: finalLayerId != null ? { docId: outId, layerId: finalLayerId, file: "psspark_result.png" } : null
           });
         } catch (eS) { diag("decomp store warn: " + eS.message); }
       } catch (e) {
@@ -4583,9 +4862,20 @@ async function startDecomp() {
     /* 有层没拿到纯色底：说清楚原因 + 给下一步动作（否则用户只看到"元素层带着整幅背景"） */
     if (probeFailN > 0) {
       const tip = "⚠ " + probeFailN + " 层没拿到纯洋红底：模型没照做「只画元素 + 平铺洋红」的指令，" +
-        "这些层保留的是整幅生成图（没有蒙版）。建议把拆图模型换成 gpt-image-2 / 2.5 / 2.6 后重试。";
+        "这些层保留的是整幅生成图（没有蒙版）。建议把拆图模型换成 gpt-image-2 / 2.5 后重试。";
       log(tip, "err");
       diag("decomp: probe failed " + probeFailN + " layer(s)");
+    }
+
+    /* 服务端限流导致整层失败：说清楚是「对方忙」而不是本地出错，
+     * 否则用户只会看到「失败 1 层」，以为是插件坏了。 */
+    const loadErr = d.results.some(function (r) {
+      return r.status === "err" && /excessive system load|get image url failed|429|rate limit|too many/i.test(String(r.msg || ""));
+    });
+    if (loadErr) {
+      log("⚠ 有层是模型服务端限流失败的（excessive system load / 取图失败），不是本地出错。" +
+        "已自动退避重试过；若仍失败，等 1–2 分钟再点「再拆一张」即可（描述与蓝图会保留）。", "err");
+      diag("decomp: 检测到服务端限流失败");
     }
 
     const total = Math.round((Date.now() - t0) / 1000);
@@ -4638,7 +4928,9 @@ async function loadCandsThumbs(run) {
     if (!c || c.thumbUri || !c.entry) continue;
     try {
       const buf = await c.entry.read({ format: formats.binary });
-      c.thumbUri = "data:image/png;base64," + base64FromBuffer(buf);
+      /* MIME 按真实文件名给：GIF 结果是 c.fileName = psspark_result.gif */
+      c.thumbUri = "data:" + ((typeof imageMimeOfName === "function") ? imageMimeOfName(c.fileName) : "image/png") +
+        ";base64," + base64FromBuffer(buf);
       if (lastRun === run) refreshResultBlock();
     } catch (e) { diag("cand thumb warn: " + ((e && e.message) || String(e))); }
   }
@@ -4677,7 +4969,7 @@ async function pvFullUri(item) {
 function pvSyncModeBtns() {
   const box = $("pvModes");
   if (!box) return;
-  const btns = box.querySelectorAll("button");
+  const btns = box.querySelectorAll("[data-mode]"); /* 按钮已换成 div.btn，不能再按标签取 */
   for (let i = 0; i < btns.length; i++) {
     btns[i].classList.toggle("on", btns[i].getAttribute("data-mode") === PV.mode);
   }
@@ -5166,6 +5458,8 @@ function startContextPoll() {
 
 function __isFormControl(t) {
   if (!t || !t.tagName) return false;
+  /* 按钮已统一改成 div.btn：从这里排除掉，避免"按按钮时手抖 5px"被当成拖拽滚动 */
+  if (t.classList && t.classList.contains("btn")) return true;
   const tag = t.tagName.toLowerCase();
   return tag === "input" || tag === "select" || tag === "textarea" ||
          tag === "button" || tag === "label" || tag === "option";
@@ -5181,17 +5475,33 @@ function attachScrollSupport(el2, opts) {
   el2.__scrollSupport = true;
   const allowContentDrag = !opts || opts.dragScroll !== false;
 
-  let pending = 0, raf = 0;
-  const flush = function () {
+  /* Windows 滚轮一格就是 ±100~120px（mac 触控板是连续小增量）：
+     旧实现把增量直接写进 scrollTop，整块瞬跳——观感就是"滑动卡顿/一蹦一蹦"。
+     改成向目标值缓动（每帧逼近 28%），连续滚轮时目标值累积，动画自然接续。 */
+  let target = null, raf = 0;
+  /* UXP 面板里 rAF 在某些状态下不回调（实测按住鼠标拖拽期间就不回调）：
+     先用一次探针确认它真的在跑，不跑就直接写 scrollTop —— 宁可少一帧动画，也不能卡住不动。 */
+  let rafLive = false;
+  try { requestAnimationFrame(function () { rafLive = true; }); } catch (e) { /* ignore */ }
+  const tick = function () {
     raf = 0;
-    if (!pending) return;
-    const d = pending;
-    pending = 0;
-    el2.scrollTop = Math.max(0, el2.scrollTop + d);
+    if (target == null) return;
+    const cur = el2.scrollTop;
+    const d = target - cur;
+    if (Math.abs(d) < 1) { el2.scrollTop = target; target = null; return; }
+    el2.scrollTop = cur + d * 0.28;
+    raf = requestAnimationFrame(tick);
   };
   const queue = function (d) {
-    pending += d;
-    if (!raf) raf = requestAnimationFrame(flush);
+    const max = Math.max(0, el2.scrollHeight - el2.clientHeight);
+    if (target == null) target = el2.scrollTop;
+    target = Math.max(0, Math.min(max, target + d));
+    if (!rafLive) { el2.scrollTop = target; target = null; return; }
+    if (!raf) raf = requestAnimationFrame(tick);
+  };
+  const stopGlide = function () {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    target = null;
   };
 
   el2.addEventListener("wheel", function (e) {
@@ -5205,29 +5515,28 @@ function attachScrollSupport(el2, opts) {
 
   if (!allowContentDrag) return;
 
-  let dragRaf = 0, dragTarget = 0, dragged = false;
+  let dragged = false;
   el2.addEventListener("pointerdown", function (e) {
     if (e.button !== 0) return;
     if (__isFormControl(e.target)) return;
+    stopGlide(); /* 手一按就停住缓动，别出现"点住了还在滑" */
     const startY = e.clientY;
     const startTop = el2.scrollTop;
     dragged = false;
+    /* 拖拽滚动：随 pointermove 直接写（不再等 rAF）—— UXP 按住鼠标期间 rAF 不回调，
+       等 rAF 就会出现"手在拖、画面不动，松手才跳一下"，这就是原先的卡顿感。 */
     const onMove = function (ev) {
       if (ev.buttons === 0) { onUp(); return; }
       const dy = ev.clientY - startY;
       if (!dragged && Math.abs(dy) < 5) return;
       dragged = true;
-      dragTarget = Math.max(0, startTop - dy);
-      if (!dragRaf) dragRaf = requestAnimationFrame(function () {
-        dragRaf = 0;
-        el2.scrollTop = dragTarget;
-      });
+      const max = Math.max(0, el2.scrollHeight - el2.clientHeight);
+      el2.scrollTop = Math.max(0, Math.min(max, startTop - dy));
     };
     const onUp = function () {
       document.removeEventListener("pointermove", onMove);
       document.removeEventListener("pointerup", onUp);
       document.removeEventListener("pointercancel", onUp);
-      if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; el2.scrollTop = dragTarget; }
       /* 拖完紧跟的那次 click 会误选下拉项：标记一下，下面 capture 阶段吞掉 */
       if (dragged) {
         el2.__swallowClick = true;
@@ -5246,6 +5555,30 @@ function attachScrollSupport(el2, opts) {
     if (e.preventDefault) e.preventDefault();
   }, true);
 }
+
+/* Windows UXP 的原生 <button> 由系统自绘外观（CSS 背景被灰块盖住、命中区只跟文字），
+ * 先把 HTML 里静态写死的按钮统一换成 div.btn，事件绑定必须在替换之后做（按 id 取到的是新节点）。 */
+(function deNativeButtons() {
+  const list = Array.prototype.slice.call(document.querySelectorAll("button"));
+  list.forEach(function (b) {
+    const d = document.createElement("div");
+    d.id = b.id;
+    d.className = "btn" + (b.className ? " " + b.className : "");
+    d.setAttribute("role", "button");
+    if (b.title) d.title = b.title;
+    Array.prototype.forEach.call(b.attributes, function (a) {
+      if (a.name.indexOf("data-") === 0) d.setAttribute(a.name, a.value);
+    });
+    while (b.firstChild) d.appendChild(b.firstChild);
+    let dis = b.hasAttribute("disabled");
+    Object.defineProperty(d, "disabled", {
+      get: function () { return dis; },
+      set: function (v) { dis = !!v; d.classList.toggle("is-disabled", dis); }
+    });
+    if (dis) d.classList.add("is-disabled");
+    if (b.parentNode) b.parentNode.replaceChild(d, b);
+  });
+})();
 
 /* ================= 事件绑定 ================= */
 
@@ -5308,7 +5641,9 @@ function syncScrollGutter() {
   try {
     const m = $("main");
     if (!m) return;
-    const w = Math.max(0, m.offsetWidth - m.clientWidth);
+    /* 取整：UXP 在高 DPI 下 offsetWidth/clientWidth 可能返回小数，写进 --sbw 会让
+       所有卡片的左右边线偏移半个像素，整列文字跟着发虚 */
+    const w = Math.max(0, Math.round(m.offsetWidth - m.clientWidth));
     try {
       document.documentElement.style.setProperty("--sbw", w + "px");
     } catch (e) {
@@ -5317,7 +5652,7 @@ function syncScrollGutter() {
     const list = $("queueList"), head = $("queueHead"), wrapEl = $("queueWrap");
     if (list && head && wrapEl) {
       const hide = wrapEl.classList.contains("hidden") || wrapEl.classList.contains("collapsed");
-      const lw = hide ? 0 : Math.max(0, list.offsetWidth - list.clientWidth);
+      const lw = hide ? 0 : Math.max(0, Math.round(list.offsetWidth - list.clientWidth));
       head.style.paddingRight = lw ? (8 + lw) + "px" : "";
     }
   } finally {
@@ -5394,12 +5729,12 @@ function updateBrandTip() {
   if (repo) {
     /* 面板窄，只显示 owner/repo，完整地址放 title；拼接文案按段翻译 */
     const short = repo.replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/^https?:\/\//i, "");
-    txt.textContent = (pub ? tr("已开源") : tr("未开源")) + " · " + short + " · " + tr("如购买请退款");
+    txt.textContent = (pub ? tr("已开源") : tr("即将开源")) + " · " + short + " · " + tr("如购买请退款");
     tip.title = pub
-      ? (tr("点击打开源码仓库") + " (" + lic + "): " + repo)
-      : (tr("仓库地址不可用：") + repo);
+      ? (tr("点击打开源码仓库（") + lic + "）：" + repo)
+      : (tr("仓库已建、暂未公开：") + repo);
   } else {
-    txt.textContent = tr("本软件已开源，如购买请退款");
+    txt.textContent = tr("本软件即将开源，如购买请退款");
     tip.title = tr("开源地址将在发布时公布");
   }
 }
@@ -5416,7 +5751,7 @@ function updateBrandTip() {
       return;
     }
     if (repo) {
-      log("仓库地址暂不可用：" + repo, "ok");
+      log("仓库暂未公开，等公开后这一条会直接跳到 " + repo, "ok");
       return;
     }
     log("开源地址尚未公布，发布后会在这里给出", "ok");
@@ -5491,7 +5826,9 @@ function updateBrandTip() {
 
   try { await storeInit(); } catch (e) { diag("storeInit warn: " + e.message); }
 
-  log("环境：" + ENV.platform + " · Photoshop " + ENV.ps + " · v1.2.0", "ok");
+  const bootVer = (typeof BRAND !== "undefined" && BRAND.version) ? BRAND.version : "0.0.0";
+  /* 带上 DPR：Windows 高 DPI 下发虚时要判断是 UXP 按 1x 绘制（DPR=1）还是别的原因 */
+  log("环境：" + ENV.platform + " · Photoshop " + ENV.ps + " · v" + bootVer + " · DPR " + (window.devicePixelRatio || 1), "ok");
   log("注册表与渲染引擎已就绪（W2）：生成域 2 项 · 编辑域 14 项" + (App.hasTextKey ? " · 提示词助手可用" : " · 提示词助手待配置文本服务") + "。", "ok");
   log("扩展功能已就绪（W4/W5）：扩图 · 结果卡（插入/重跑/收藏/删除）· 历史归档" + (Store.ready ? "（已载入 " + Store.jobs.length + " 条记录）" : "") + "。", "ok");
 })();

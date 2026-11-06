@@ -11,8 +11,18 @@
     --sp: 8px;            /* 统一左右留白 */
     --pad: 8px;           /* 卡片/分区内边距 */
     --sbw: 0px;           /* 右侧滚动条实际占位（启动时测量） */
+    --fs-input: 13px;     /* 输入框与提示词助手区统一字号（比正文大一档，中文更易读） */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  /* Windows UXP 里 <button> 是系统控件自绘（CSS 背景被灰块盖住、命中区只跟文字走），
+     所以按钮统一用 div.btn；这条是通用兜底，带类名的按钮仍由各自规则覆盖。 */
+  .btn {
+    display: flex; align-items: center; justify-content: center;
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 5px 8px; font: inherit; cursor: pointer; text-align: center;
+  }
+  .btn:hover { border-color: var(--dim); }
+  .btn.is-disabled { opacity: .45; cursor: default; pointer-events: none; }
   html, body { height: 100%; }
   body {
     /* 跨平台字体栈：macOS 用 SF，Windows 用 Segoe UI + 微软雅黑（缺失时逐级回退，不会变成宋体） */
@@ -127,19 +137,19 @@
   .confirm-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #ffb74d; }
   .confirm-text { font-size: 12px; line-height: 1.75; color: var(--text); white-space: pre-wrap; word-break: break-word; }
   .confirm-actions { display: flex; margin-top: 14px; }
-  .confirm-actions > button {
+  .confirm-actions > .btn {
     flex: 1 1 0%; min-width: 0; padding: 7px 10px; border-radius: var(--r);
     border: 1px solid var(--border); background: var(--panel2); color: var(--text);
     font: inherit; cursor: pointer;
   }
-  .confirm-actions > button + button { margin-left: 8px; }
-  .confirm-actions > button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .confirm-actions > .btn + .btn { margin-left: 8px; }
+  .confirm-actions > .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .overlay-head {
     display: flex; align-items: center; gap: 8px;
     padding: 8px; border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .overlay-head button {
+  .overlay-head .btn {
     padding: 4px 10px; border-radius: var(--r); border: 1px solid var(--border);
     background: var(--panel); color: var(--text); cursor: pointer; font: inherit;
   }
@@ -162,13 +172,13 @@
   .check input { accent-color: var(--accent); }
   .btnRow { display: flex; margin-top: 10px; }
   .btnRow > * + * { margin-left: 6px; }
-  .btnRow button {
+  .btnRow .btn {
     flex: 1 1 0; min-width: 0; height: 28px; padding: 0 8px; border-radius: var(--r); border: none; cursor: pointer;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     background: var(--accent); color: #fff; font: inherit; font-weight: 600;
   }
-  .btnRow button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
-  .btnRow button:disabled { opacity: .45; cursor: default; }
+  .btnRow .btn.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
+  .btnRow .btn:disabled { opacity: .45; cursor: default; }
   .status-line { margin-top: 8px; font-size: 11px; color: var(--dim); min-height: 16px; word-break: break-all; }
   .status-line.ok { color: var(--ok); }
   .status-line.err { color: var(--err); }
@@ -203,25 +213,25 @@
   }
   textarea:focus { border-color: var(--accent); }
   /* 文本域显式高度（UXP 中 rows 属性不可靠，会被压成一行高）；实际高度由 autoGrowTa 按内容内联覆盖 */
-  .ta-prompt { height: 116px; }
-  .ta-supp { height: 64px; }
-  .ta-tpl { height: 116px; }
+  .ta-prompt { height: 116px; font-size: var(--fs-input); line-height: 20px; }
+  .ta-supp { height: 64px; font-size: var(--fs-input); line-height: 20px; }
+  .ta-tpl { height: 116px; font-size: var(--fs-input); line-height: 20px; }
   .prompt-tools { display: flex; justify-content: flex-end; margin-top: 4px; }
-  .p-btn { background: transparent; border: 1px solid var(--border); color: var(--dim); border-radius: var(--r); font-size: 11px; padding: 2px 6px; cursor: pointer; font: inherit; font-size: 11px; }
+  .p-btn { background: transparent; border: 1px solid var(--border); color: var(--dim); border-radius: var(--r); padding: 3px 8px; cursor: pointer; font: inherit; font-size: var(--fs-input); }
   .p-btn:hover { color: var(--text); border-color: var(--dim); }
   .p-btn:disabled { opacity: .45; cursor: default; }
   /* 提示词助手（内联工具槽） */
   .assist { margin-top: 2px; }
   .assist-panel { margin-top: 6px; padding: 8px; border: 1px solid var(--border); border-radius: var(--r); background: var(--panel2); }
   .assist-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .assist-chip { padding: 3px 9px; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .assist-chip { padding: 3px 9px; font-size: var(--fs-input); border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
   .assist-chip:hover { border-color: var(--accent); }
   .assist-chip:disabled { opacity: .45; cursor: default; }
-  .assist-status { margin-top: 6px; font-size: 11px; color: var(--dim); line-height: 1.5; }
+  .assist-status { margin-top: 6px; font-size: var(--fs-input); color: var(--dim); line-height: 1.5; }
   .assist-status.warn { color: #ffb74d; }
   .assist-status.err { color: var(--err); }
   .assist-status.ok { color: var(--ok); }
-  .assist-result { margin-top: 6px; height: 150px; }
+  .assist-result { margin-top: 6px; height: 150px; font-size: var(--fs-input); }
   .assist-ops { display: flex; gap: 6px; margin-top: 6px; }
   .assist-ops .p-btn { flex: 1; padding: 5px 0; }
   .fold-head { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--dim); font-size: 11px; padding: 2px 0; }
@@ -287,7 +297,7 @@
   .adv[open] summary { color: var(--accent-hover); }
 
   /* ComfyUI 工作流输入 */
-  fieldset textarea { width: 100%; min-height: 96px; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 6px 8px; font: 11px/1.5 ui-monospace, Menlo, monospace; outline: none; user-select: text; }
+  fieldset textarea { width: 100%; min-height: 96px; resize: vertical; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: var(--r); padding: 6px 8px; font: 11px/1.5 ui-monospace, "Cascadia Mono", Consolas, Menlo, "Microsoft YaHei", monospace; outline: none; user-select: text; }
   fieldset textarea:focus { border-color: var(--accent); }
   .run-wrap { margin-top: 12px; }
   .runbar { display: flex; gap: 8px; }
@@ -319,14 +329,18 @@
   .rb-pick:disabled { cursor: default; }
   .rb-meta { font-size: 11px; color: var(--dim); flex: 1; word-break: break-all; }
   .rb-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-  .rb-actions button { flex: 1 1 44%; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
-  .rb-actions button:disabled { opacity: .45; cursor: default; }
-  .rb-actions button.rb-del { color: #ffb74d; }
+  .rb-actions .btn { flex: 1 1 44%; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .rb-actions .btn:disabled { opacity: .45; cursor: default; }
+  .rb-actions .btn.rb-del { color: #ffb74d; }
   /* ============ W6：历史域 ============ */
   .hj-card { border: 1px solid var(--border); border-radius: var(--r); padding: var(--pad); margin-top: var(--pad); position: relative; }
   .hj-top { display: flex; gap: 8px; align-items: flex-start; }
   .hj-thumb { width: 52px; height: 52px; border-radius: var(--r); border: 1px solid var(--border); object-fit: cover; background: var(--panel2); flex: none; display: block; }
-  .hj-thumb.hj-noimg { opacity: .35; }
+  /* 缩略图未生成（旧记录）：浅灰占位，不转圈、不重排。
+   * 插入一次即自动生成，或在历史页头部点「补缩略图」批量补。 */
+  .hj-thumb.hj-noimg, .hj-cand-img.hj-noimg { opacity: .35; }
+  /* 读取缩略图的那一瞬间（本地小文件，通常 <30ms） */
+  .hj-thumb.hj-loading, .hj-cand-img.hj-loading { opacity: .55; }
   .hj-info { flex: 1; min-width: 0; }
   .hj-name { font-size: 12px; word-break: break-all; }
   .hj-meta { font-size: 11px; color: var(--dim); margin-top: 2px; word-break: break-all; line-height: 1.5; }
@@ -342,11 +356,11 @@
     color: var(--dim); font-size: 11px; line-height: 1.7; text-align: center;
   }
   .hj-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
-  .hj-actions button { flex: 1 1 44%; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
-  .hj-actions button:disabled { opacity: .45; cursor: default; }
+  .hj-actions .btn { flex: 1 1 44%; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .hj-actions .btn:disabled { opacity: .45; cursor: default; }
   /* UXP 对 :disabled 伪类支持不稳：状态同时挂 class，样式不依赖伪类 */
-  .hj-actions button.is-dis { opacity: .45; cursor: default; border-style: dashed; }
-  .hj-actions button.hj-del { color: #ffb74d; }
+  .hj-actions .btn.is-dis { opacity: .45; cursor: default; border-style: dashed; }
+  .hj-actions .btn.hj-del { color: #ffb74d; }
   /* 历史卡片的说明浮层（UXP 里 title 属性不弹 tooltip，自己画一个） */
   .hj-tip {
     position: absolute; left: var(--pad); right: var(--pad); z-index: 30;
@@ -380,8 +394,8 @@
   .dc-run-status.err { color: var(--err); }
   .dc-run-status.run { color: var(--accent-hover); }
   .dc-toolbar { display: flex; gap: 6px; margin-top: 8px; }
-  .dc-toolbar button { flex: 1; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
-  .dc-toolbar button:disabled { opacity: .45; cursor: default; }
+  .dc-toolbar .btn { flex: 1; padding: 5px 0; font-size: 11px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; }
+  .dc-toolbar .btn:disabled { opacity: .45; cursor: default; }
   /* 分析画面预览（明确"发给模型的是哪张图"） */
   .dc-preview { margin-top: 8px; border: 1px dashed var(--border); border-radius: var(--r); padding: 6px; text-align: center; }
   .dc-preview img { max-width: 100%; max-height: 160px; display: block; margin: 0 auto 4px auto; border-radius: var(--r); }
@@ -411,12 +425,12 @@
   }
   .pv-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .pv-cap { flex: 1; min-width: 0; font-size: 11px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pv-head button { padding: 3px 8px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 11px; }
+  .pv-head .btn { padding: 3px 8px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel); color: var(--text); cursor: pointer; font: inherit; font-size: 11px; }
   .pv-seg { display: flex; gap: 2px; background: var(--panel2); border-radius: var(--r); padding: 2px; flex-shrink: 0; }
-  .pv-seg button { padding: 2px 7px; border: none; border-radius: var(--r); background: transparent; color: var(--dim); }
-  .pv-seg button.on { background: var(--accent); color: #fff; }
+  .pv-seg .btn { padding: 2px 7px; border: none; border-radius: var(--r); background: transparent; color: var(--dim); }
+  .pv-seg .btn.on { background: var(--accent); color: #fff; }
   .pv-zoom { display: flex; align-items: center; gap: 3px; font-size: 10px; color: var(--dim); flex-shrink: 0; }
-  .pv-zoom button { padding: 1px 6px; }
+  .pv-zoom .btn { padding: 1px 6px; }
   .pv-body { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 8px; }
   .pv-stage { position: relative; display: flex; gap: 8px; align-items: flex-start; }
   .pv-stage.mode-slide { display: block; }
@@ -432,8 +446,8 @@
   .pv-thumb.on { border-color: var(--accent); }
   .pv-redo { display: flex; gap: 6px; align-items: center; }
   .pv-redo input { flex: 1; min-width: 0; padding: 4px 6px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel2); color: var(--text); font: inherit; font-size: 11px; outline: none; }
-  .pv-redo button { padding: 4px 9px; border-radius: var(--r); border: none; background: var(--accent); color: #fff; font: inherit; font-size: 11px; cursor: pointer; }
-  .pv-redo button:disabled { opacity: .45; cursor: default; }
+  .pv-redo .btn { padding: 4px 9px; border-radius: var(--r); border: none; background: var(--accent); color: #fff; font: inherit; font-size: 11px; cursor: pointer; }
+  .pv-redo .btn:disabled { opacity: .45; cursor: default; }
   .pv-hint { font-size: 10px; color: var(--dim); line-height: 1.6; }
   body.preview-open #topbar,
   body.preview-open #nlBar,
@@ -450,12 +464,14 @@
     font-size: 11px; color: var(--dim);
   }
   #queueSummary { flex: 1 1 auto; min-width: 0; }
-  .q-ops button {
+  /* 按钮换成 div.btn 后是块级元素，这个容器必须自己 flex，否则会竖着堆（原生 <button> 是 inline-block 不会） */
+  .q-ops { display: flex; align-items: center; flex: none; }
+  .q-ops .btn {
     height: 20px; padding: 0 7px; margin-left: 6px; border-radius: var(--r);
     border: 1px solid var(--border); background: var(--panel); color: var(--dim);
     font: inherit; font-size: 10px; cursor: pointer;
   }
-  .q-ops button:hover { color: var(--text); border-color: var(--dim); }
+  .q-ops .btn:hover { color: var(--text); border-color: var(--dim); }
   #queueWrap.collapsed #queueList { display: none; }
   #queueHead { cursor: pointer; }
   .accent-btn {
@@ -506,8 +522,8 @@
   .help-group { font-size: 11px; color: var(--accent-hover); font-weight: 600; margin-top: 12px; }
   .help-group:first-child { margin-top: 0; }
   .help-master { margin-top: 8px; }
-  .help-master button { height: 24px; padding: 0 9px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel2); color: var(--dim); font: inherit; font-size: 10px; cursor: pointer; }
-  .help-master button:hover { color: var(--accent-hover); border-color: var(--accent); }
+  .help-master .btn { height: 24px; padding: 0 9px; border-radius: var(--r); border: 1px solid var(--border); background: var(--panel2); color: var(--dim); font: inherit; font-size: 10px; cursor: pointer; }
+  .help-master .btn:hover { color: var(--accent-hover); border-color: var(--accent); }
   #helpList.collapsed .help-body { display: none; }
   .help-item { border: 1px solid var(--border); border-radius: var(--r); padding: 8px; margin-top: 8px; }
   .help-head { display: flex; align-items: flex-start; gap: 6px; }
@@ -526,11 +542,11 @@
   #nlToggle:hover { color: var(--text); border-color: var(--accent); }
   #nlToggle.open { border-style: solid; border-color: var(--accent); color: var(--text); }
   #nlPanel { margin-top: 6px; border: 1px solid var(--border); border-radius: var(--r); padding: 8px; background: var(--panel2); }
-  .ta-nl { height: 64px; }
+  .ta-nl { height: 64px; font-size: var(--fs-input); line-height: 20px; }
   .nl-ops { display: flex; gap: 6px; margin-top: 6px; }
-  .nl-ops button { flex: 1; padding: 6px 0; border-radius: var(--r); border: none; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; font-size: 12px; }
-  .nl-ops button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
-  .nl-ops button:disabled { opacity: .45; cursor: default; }
+  .nl-ops .btn { flex: 1; padding: 6px 0; border-radius: var(--r); border: none; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; font-size: 12px; }
+  .nl-ops .btn.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
+  .nl-ops .btn:disabled { opacity: .45; cursor: default; }
   .nl-status { margin-top: 6px; font-size: 11px; color: var(--dim); min-height: 14px; line-height: 1.5; word-break: break-all; }
   .nl-status.ok { color: var(--ok); }
   .nl-status.err { color: var(--err); }
@@ -568,16 +584,16 @@
 </div>
 
 <div id="nlBar">
-  <button id="nlToggle" type="button" title="用一句话描述你想做的事，自动定位到对应功能并填好提示词（消耗 1 次文本请求）">✨ 一句话：说出你想做什么（自动定位功能）</button>
-  <div id="nlPanel" class="hidden">
-    <textarea id="nlInput" class="ta-nl" placeholder="例：把背景换成海边沙滩 / 去掉画面右侧的水印 / 把标题文字改成「夏日特惠」/ 把这张图拆成图层"></textarea>
+  <button id="nlToggle" title="用一句话描述你想做的事，自动定位到对应功能并填好提示词（消耗 1 次文本请求）" type="button">✨ 一句话：说出你想做什么（自动定位功能）</button>
+  <div class="hidden" id="nlPanel">
+    <textarea class="ta-nl" id="nlInput" placeholder="例：把背景换成海边沙滩 / 去掉画面右侧的水印 / 把标题文字改成「夏日特惠」/ 把这张图拆成图层"></textarea>
     <div class="nl-ops">
       <button id="nlParse" type="button">解析并定位</button>
-      <button id="nlClose" type="button" class="secondary">收起</button>
+      <button class="secondary" id="nlClose" type="button">收起</button>
     </div>
-    <div id="nlStatus" class="nl-status"></div>
-    <div id="nlConfirm" class="hidden">
-      <div id="nlPlan" class="nl-plan"></div>
+    <div class="nl-status" id="nlStatus"></div>
+    <div class="hidden" id="nlConfirm">
+      <div class="nl-plan" id="nlPlan"></div>
       <div class="nl-ops">
         <button id="nlApply" type="button">用此功能 →</button>
       </div>
@@ -610,9 +626,9 @@
   </section>
 </main>
 
-<div id="queueWrap" class="hidden">
+<div class="hidden" id="queueWrap">
   <div id="queueHead" title="点击展开/收起队列">
-    <span id="qCaret" class="q-caret">▸</span>
+    <span class="q-caret" id="qCaret">▸</span>
     <span id="queueSummary">队列空闲</span>
     <span class="q-ops">
       <button id="btnQueueCancelAll" type="button">取消全部</button>
@@ -623,12 +639,12 @@
 </div>
 
 <div id="bottom">
-  <div id="progressWrap" class="hidden"><span id="progressSpin">⏳</span><span id="progressText"></span></div>
+  <div class="hidden" id="progressWrap"><span id="progressSpin">⏳</span><span id="progressText"></span></div>
   <div id="logBar"><span id="statusDot"></span><span id="statusText">就绪</span><span class="chev">›</span></div>
-  <div id="log" class="hidden"></div>
+  <div class="hidden" id="log"></div>
 </div>
 
-<div id="settingsOverlay" class="hidden">
+<div class="hidden" id="settingsOverlay">
   <div class="overlay-head">
     <button id="btnSettingsBack">‹ 返回</button>
     <span class="t">设置</span>
@@ -642,15 +658,15 @@
     </fieldset>
 
     <fieldset id="secImage">
-      <legend>服务接入 · 图像服务</legend>
+      <legend>服务接入 · 图像服务（PS Spark API）</legend>
       <label>节点 / Base URL</label>
       <div id="imgBaseUrl"></div>
-      <input type="text" id="imgBaseUrlCustom" class="hidden" placeholder="https://your-node.example.com" style="margin-top:4px">
+      <input class="hidden" id="imgBaseUrlCustom" placeholder="https://your-node.example.com" type="text" style="margin-top:4px">
       <label>API Key</label>
-      <input type="password" id="apiKey" placeholder="sk-xxxxxxxx（填写后自动保存到本机）" autocomplete="off">
+      <input autocomplete="off" id="apiKey" placeholder="sk-xxxxxxxx（填写后自动保存到本机）" type="password">
       <label>模型</label>
       <div id="imgModel"></div>
-      <input type="text" id="imgModelCustom" class="hidden" placeholder="模型名（如 nano-banana-2）" style="margin-top:4px">
+      <input class="hidden" id="imgModelCustom" placeholder="模型名（如 nano-banana-2）" type="text" style="margin-top:4px">
       <div class="dim-note">尺寸 / 质量 / 分辨率随所选模型自动调整：gpt-image 系列走 OpenAI 兼容端点；nano-banana 系列走统一端点（比例出图 + 分辨率档）</div>
       <div class="btnRow">
         <button id="btnTestImage">测试连接</button>
@@ -663,18 +679,18 @@
       <label>模型预设</label>
       <div id="comfyPresetDD"></div>
       <div class="btnRow">
-        <button id="btnComfyAdd" class="secondary">新增</button>
-        <button id="btnComfyDup" class="secondary">复制</button>
-        <button id="btnComfyDel" class="secondary">删除</button>
+        <button class="secondary" id="btnComfyAdd">新增</button>
+        <button class="secondary" id="btnComfyDup">复制</button>
+        <button class="secondary" id="btnComfyDel">删除</button>
       </div>
 
       <label>名称（显示在模型下拉里）</label>
-      <input type="text" id="comfyName" placeholder="例如 Klein 4B（本机）">
+      <input id="comfyName" placeholder="例如 Klein 4B（本机）" type="text">
 
       <label>主地址</label>
-      <input type="text" id="comfyUrl" placeholder="http://127.0.0.1:8188">
+      <input id="comfyUrl" placeholder="http://127.0.0.1:8188" type="text">
       <label>其他机器地址（一行一个，可选）</label>
-      <textarea id="comfyUrlExtra" rows="2" placeholder="http://192.168.1.9:8188&#10;http://192.168.1.10:8188"></textarea>
+      <textarea id="comfyUrlExtra" placeholder="http://192.168.1.9:8188&#10;http://192.168.1.10:8188" rows="2"></textarea>
 
       <label>能力（决定它能出现在哪些功能里）</label>
       <div class="cap-row" id="comfyCaps"></div>
@@ -688,32 +704,32 @@
       <div class="dim-note">模型能力较弱时，选「整图重绘 + 蒙版合成」：把选区向外扩大一圈后整张重绘（不依赖工作流的蒙版质量），再用蒙版把结果裁回选区，边缘按羽化过渡。</div>
 
       <label>工作流 JSON（API 格式）</label>
-      <textarea id="comfyWorkflow" rows="5" placeholder="ComfyUI 里 Workflow ▸ Export (API) 导出，或点下面的「导入 JSON…」"></textarea>
+      <textarea id="comfyWorkflow" placeholder="ComfyUI 里 Workflow ▸ Export (API) 导出，或点下面的「导入 JSON…」" rows="5"></textarea>
 
       <div class="btnRow">
-        <button id="btnImportComfy" class="secondary">导入 JSON…</button>
+        <button class="secondary" id="btnImportComfy">导入 JSON…</button>
         <button id="btnTestComfy">测试连接</button>
-        <button id="btnComfyProbeAll" class="secondary">检测全部</button>
+        <button class="secondary" id="btnComfyProbeAll">检测全部</button>
       </div>
       <div class="status-line" id="comfyStatus">未测试</div>
 
       <details class="adv">
         <summary>高级：节点角色 / 采样参数</summary>
         <label>PROMPT 节点 ID（留空自动识别）</label>
-        <input type="text" id="comfyPromptNode" placeholder="例如 4">
+        <input id="comfyPromptNode" placeholder="例如 4" type="text">
         <div class="row3">
-          <div><label>步数</label><input type="text" id="comfySteps" class="mini" placeholder="—"></div>
-          <div><label>CFG</label><input type="text" id="comfyCfg" class="mini" placeholder="—"></div>
-          <div><label>重绘幅度</label><input type="text" id="comfyDenoise" class="mini" placeholder="—"></div>
+          <div><label>步数</label><input class="mini" id="comfySteps" placeholder="—" type="text"></div>
+          <div><label>CFG</label><input class="mini" id="comfyCfg" placeholder="—" type="text"></div>
+          <div><label>重绘幅度</label><input class="mini" id="comfyDenoise" placeholder="—" type="text"></div>
         </div>
         <div class="dim-note">工作流里把节点标题改成 PROMPT / NEGATIVE / INPUT / MASK / SIZE / OUTPUT，插件按角色注入；没改也能靠类型自动识别。</div>
       </details>
 
       <div class="btnRow">
-        <button id="btnComfyTemplates" class="accent-btn">添加内置模板</button>
-        <button id="btnComfyAdapt" class="secondary">适配本机模型</button>
-        <button id="btnComfyExport" class="secondary">导出预设…</button>
-        <button id="btnComfyImportAll" class="secondary">导入预设…</button>
+        <button class="accent-btn" id="btnComfyTemplates">添加内置模板</button>
+        <button class="secondary" id="btnComfyAdapt">适配本机模型</button>
+        <button class="secondary" id="btnComfyExport">导出预设…</button>
+        <button class="secondary" id="btnComfyImportAll">导入预设…</button>
       </div>
       <div class="dim-note">「适配本机模型」按 ComfyUI 里实际的文件名改写工作流：子目录、量化档（Q4/Q8）、大小写不同都能对上；本机没装 GGUF 加载器时会自动换成标准加载器。改不动会明确告诉你缺什么，不会把模型硬套上去。换电脑后先点这一下再跑。</div>
       <div class="dim-note">同一条工作流可以填多台机器：运行时自动选第一台在线的，某台离线会顺延到下一台；「检测全部」逐台核对是否缺模型文件。不同模型仍需各自的工作流（节点和模型文件名不同），但同一模型不必为每台机器复制一遍。</div>
@@ -725,14 +741,14 @@
       <div class="seg" id="txtRegion"></div>
       <label>语言模型（提示词助手 / 蓝图 / 指令解析）</label>
       <div id="txtModel"></div>
-      <input type="text" id="txtModelCustom" class="hidden" placeholder="模型名（如 deepseek-flash）" style="margin-top:4px">
+      <input class="hidden" id="txtModelCustom" placeholder="模型名（如 deepseek-flash）" type="text" style="margin-top:4px">
       <label>Base URL（OpenAI 兼容 · 选择模型后自动填充，可修改）</label>
-      <input type="text" id="txtBaseUrl" placeholder="https://api.deepseek.com/v1">
+      <input id="txtBaseUrl" placeholder="https://api.deepseek.com/v1" type="text">
       <label>API Key</label>
-      <input type="password" id="txtApiKey" placeholder="sk-xxxxxxxx（填写后自动保存到本机）" autocomplete="off">
+      <input autocomplete="off" id="txtApiKey" placeholder="sk-xxxxxxxx（填写后自动保存到本机）" type="password">
       <label>图片分析模型（拆图看图专用 · 仅列支持看图的模型）</label>
       <div id="txtVisionModel"></div>
-      <input type="text" id="txtVisionCustom" class="hidden" placeholder="自定义图片分析模型名" style="margin-top:4px">
+      <input class="hidden" id="txtVisionCustom" placeholder="自定义图片分析模型名" type="text" style="margin-top:4px">
       <div class="dim-note" id="txtVisionNote">语言模型支持看图时自动跟随；不支持时使用上一次跑通的模型</div>
       <div class="btnRow">
         <button id="btnTestText">测试连接</button>
@@ -744,13 +760,13 @@
       <legend>模型分配（功能 → 模型）</legend>
       <label>生成</label>
       <div id="mapGen"></div>
-      <input type="text" id="mapGenCustom" class="hidden" placeholder="模型名" style="margin-top:4px">
+      <input class="hidden" id="mapGenCustom" placeholder="模型名" type="text" style="margin-top:4px">
       <label>编辑 / 拆图逐层</label>
       <div id="mapEdit"></div>
-      <input type="text" id="mapEditCustom" class="hidden" placeholder="模型名" style="margin-top:4px">
+      <input class="hidden" id="mapEditCustom" placeholder="模型名" type="text" style="margin-top:4px">
       <label>提示词助手 / 蓝图</label>
       <div id="mapText"></div>
-      <input type="text" id="mapTextCustom" class="hidden" placeholder="模型名" style="margin-top:4px">
+      <input class="hidden" id="mapTextCustom" placeholder="模型名" type="text" style="margin-top:4px">
       <div class="status-line" id="mapStatus">「跟随默认」= 不覆盖；拆图逐层跟随「编辑」模型</div>
     </fieldset>
 
@@ -771,10 +787,10 @@
       <label>并发请求数（拆图逐层 / 多候选）</label>
       <div id="defConcurrency"></div>
       <div class="dim-note">并发越高总耗时越短，但更易触发平台限流；不稳时降到 1–2</div>
-      <label class="check"><input type="checkbox" id="defTransparent"> 默认透明背景</label>
-      <label class="check"><input type="checkbox" id="defClip"> 默认结果裁剪到选区</label>
-      <label class="check"><input type="checkbox" id="defSmartObject"> 结果以智能对象插入（可无损缩放；拆图除外）</label>
-      <label class="check"><input type="checkbox" id="defOutpaintKeep"> 扩图保留原图区域（挖空蒙版；默认关，关掉融合更自然）</label>
+      <label class="check"><input id="defTransparent" type="checkbox"> 默认透明背景</label>
+      <label class="check"><input id="defClip" type="checkbox"> 默认结果裁剪到选区</label>
+      <label class="check"><input id="defSmartObject" type="checkbox"> 结果以智能对象插入（可无损缩放；拆图除外）</label>
+      <label class="check"><input id="defOutpaintKeep" type="checkbox"> 扩图保留原图区域（挖空蒙版；默认关，关掉融合更自然）</label>
       <div class="dim-note">候选张数 = 每次生成几张备选（并发请求，选一张插入，其余存入历史）；也可在功能面板临时调整</div>
       <div class="status-line" id="defStatus"></div>
     </fieldset>
@@ -785,20 +801,20 @@
       <div class="help-master">
         <button id="btnHelpToggle" type="button">▸ 展开说明</button>
       </div>
-      <div id="helpList" class="collapsed"></div>
+      <div class="collapsed" id="helpList"></div>
     </fieldset>
 
     <fieldset id="secDiag">
       <legend>诊断与数据</legend>
-      <label class="check"><input type="checkbox" id="diagLog"> 记录调试日志（psspark_debug.log）</label>
+      <label class="check"><input id="diagLog" type="checkbox"> 记录调试日志（psspark_debug.log）</label>
       <label>历史缓存</label>
       <div class="status-line" id="cacheStats">统计中…</div>
       <div class="btnRow">
-        <button id="btnCacheMove" class="secondary">更换缓存位置</button>
-        <button id="btnCacheClean" class="secondary">清理未收藏缓存</button>
+        <button class="secondary" id="btnCacheMove">更换缓存位置</button>
+        <button class="secondary" id="btnCacheClean">清理未收藏缓存</button>
       </div>
       <div class="btnRow hidden" id="cacheResetRow">
-        <button id="btnCacheReset" class="secondary">恢复默认位置</button>
+        <button class="secondary" id="btnCacheReset">恢复默认位置</button>
       </div>
       <div class="dim-note">缓存仅含插件自建目录（结果图与参数记录）；★ 收藏的任务不会被清理；不触碰其它文件。</div>
       <div class="status-line" id="cacheStatus"></div>
@@ -807,13 +823,13 @@
   </div>
 </div>
 
-<div id="imgPreview" class="hidden">
+<div class="hidden" id="imgPreview">
   <div class="pv-head">
-    <span id="pvCap" class="pv-cap"></span>
+    <span class="pv-cap" id="pvCap"></span>
     <div class="pv-seg" id="pvModes">
-      <button type="button" data-mode="single" class="on">单图</button>
-      <button type="button" data-mode="side">并排</button>
-      <button type="button" data-mode="slide">滑动</button>
+      <button class="on" data-mode="single" type="button">单图</button>
+      <button data-mode="side" type="button">并排</button>
+      <button data-mode="slide" type="button">滑动</button>
     </div>
     <div class="pv-zoom">
       <button id="pvZoomOut" type="button">−</button>
@@ -824,17 +840,17 @@
   </div>
   <div class="pv-body" id="pvBody">
     <div class="pv-stage mode-single" id="pvStage">
-      <div class="pv-frame" id="pvFrameA"><img id="pvImgA" alt=""></div>
-      <div class="pv-frame" id="pvFrameB"><img id="pvImgB" alt=""></div>
-      <div id="pvDivider" class="pv-divider hidden"></div>
-      <div id="pvSel" class="pv-sel hidden"></div>
+      <div class="pv-frame" id="pvFrameA"><img alt id="pvImgA"></div>
+      <div class="pv-frame" id="pvFrameB"><img alt id="pvImgB"></div>
+      <div class="pv-divider hidden" id="pvDivider"></div>
+      <div class="pv-sel hidden" id="pvSel"></div>
     </div>
   </div>
   <div class="pv-foot">
     <div class="pv-thumbs hidden" id="pvThumbs"></div>
     <div class="pv-redo">
-      <input type="text" id="pvRedoPrompt" placeholder="补充要求（可留空，例：把手部改自然）">
-      <button id="pvRedoBtn" type="button" disabled>重做框内区域</button>
+      <input id="pvRedoPrompt" placeholder="补充要求（可留空，例：把手部改自然）" type="text">
+      <button disabled id="pvRedoBtn" type="button">重做框内区域</button>
     </div>
     <div class="pv-hint" id="pvHint">在图上拖一个矩形，可只重做该区域（图像 ×1）</div>
   </div>
@@ -843,7 +859,7 @@
 <div id="modalLayer"></div>
 
 <!-- 二次确认层（扩图超限等）：UXP 里 window.confirm 不可用，用同款「隐藏底层 + 覆盖层」实现 -->
-<div id="confirmOverlay" class="hidden">
+<div class="hidden" id="confirmOverlay">
   <div class="overlay-head"><span class="t" id="cfHead">请确认</span></div>
   <div class="confirm-body">
     <div class="confirm-card">
@@ -851,7 +867,7 @@
       <div class="confirm-text" id="cfText"></div>
       <div class="confirm-actions">
         <button id="cfCancel" type="button">取消</button>
-        <button id="cfOk" type="button" class="primary">仍然继续</button>
+        <button class="primary" id="cfOk" type="button">仍然继续</button>
       </div>
     </div>
   </div>

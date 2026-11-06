@@ -25,14 +25,15 @@ I18N.dict.en = {
   "编辑": "Edit",
   "拆图": "Split",
   "历史": "History",
+  "本软件即将开源，如购买请退款": "Open source soon · Refund if you paid",
   "本软件已开源，如购买请退款": "Open source · Refund if you paid",
   "已开源": "Open source",
-  "未开源": "Not open source",
+  "即将开源": "Open source soon",
   "如购买请退款": "refund if you paid",
   "许可证": "License",
   "密钥与配置仅存于本机": "keys and settings stay on this machine",
   "点击打开源码仓库（": "Open the source repository (",
-  "仓库地址不可用：": "Repository unavailable: ",
+  "仓库已建、暂未公开：": "Repository created, not public yet: ",
   "开源地址将在发布时公布": "The repository will be announced at release",
   "✨ 一句话：说出你想做什么（自动定位功能）": "✨ One line: say what you want (auto-picks the feature)",
   "解析并定位": "Parse & locate",
@@ -51,8 +52,7 @@ I18N.dict.en = {
   /* ===== 设置：图像服务 ===== */
   "‹ 返回": "‹ Back",
   "设置": "Settings",
-  "服务接入 · 图像服务": "Service · Image",
-  "点击打开源码仓库": "Open the source repository",
+  "服务接入 · 图像服务（PS Spark API）": "Service · Image (PS Spark API)",
   "节点 / Base URL": "Endpoint / Base URL",
   "模型": "Model",
   "尺寸 / 质量 / 分辨率随所选模型自动调整：gpt-image 系列走 OpenAI 兼容端点；nano-banana 系列走统一端点（比例出图 + 分辨率档）":
@@ -90,12 +90,13 @@ I18N.dict.en = {
   "工作流里把节点标题改成 PROMPT / NEGATIVE / INPUT / MASK / SIZE / OUTPUT，插件按角色注入；没改也能靠类型自动识别。":
     "Rename nodes to PROMPT / NEGATIVE / INPUT / MASK / SIZE / OUTPUT to inject by role; without renaming, node types are auto-detected.",
   "添加内置模板": "Add built-in template",
-  "通用 Checkpoint 文生图": "Generic checkpoint · text to image",
+  "补缩略图": "Backfill thumbnails",
+  "补图中…": "Backfilling…",
   "适配本机模型": "Match local models",
-  "适配中…（读取本机模型列表）": "Matching… (reading local model list)",
-  "内置模板已在列表里": "Built-in templates already added",
   "「适配本机模型」按 ComfyUI 里实际的文件名改写工作流：子目录、量化档（Q4/Q8）、大小写不同都能对上；本机没装 GGUF 加载器时会自动换成标准加载器。改不动会明确告诉你缺什么，不会把模型硬套上去。换电脑后先点这一下再跑。":
     "“Match local models” rewrites the workflow to the filenames actually present in ComfyUI: subfolders, quantization (Q4/Q8) and letter case are all tolerated; if the GGUF loaders are missing it switches to the standard loaders. When it cannot match, it tells you exactly what is missing instead of forcing a wrong model. After moving to a new machine, click this once before running.",
+  "适配中…（读取本机模型列表）": "Matching… (reading local model list)",
+  "内置模板已在列表里": "Built-in templates already added",
   "导出预设…": "Export presets…",
   "导入预设…": "Import presets…",
   "同一条工作流可以填多台机器：运行时自动选第一台在线的，某台离线会顺延到下一台；「检测全部」逐台核对是否缺模型文件。不同模型仍需各自的工作流（节点和模型文件名不同），但同一模型不必为每台机器复制一遍。":
@@ -322,6 +323,7 @@ I18N.dict.en = {
   "提示词（可选）": "Prompt (optional)",
   "提示词（内置模板）": "Prompt (built-in template)",
   "补充提示（可选）": "Extra prompt (optional)",
+  "补充提示（可选） · 已填写": "Extra prompt (optional) · filled",
   "替换原文": "Replace text",
   "参数": "Parameters",
   "尺寸": "Size",
@@ -369,7 +371,8 @@ I18N.dict.en = {
     "Generated from the selected elements: a base image with every split element removed and naturally filled in (written last, at the bottom)",
   "开始拆图": "Start split",
   "③ 执行（并发生成 · 串行写入）": "③ Run (concurrent generation · serial writes)",
-  "再拆一张 / 重新开始": "Split another / Start over",
+  "再拆一张（保留描述与蓝图）": "Split another (keep notes & blueprint)",
+  "全部清空": "Clear all",
   "强度": "Strength",
   "中（推荐）": "Medium (recommended)",
   "轻（保留原图更多）": "Light (keeps more of the original)",
@@ -381,6 +384,7 @@ I18N.dict.en = {
   "两种用法：① 不添加资产——先在 PS 里把素材图层拖到目标位置摆好，直接点「合 入」，对已摆好的合成做自然融合（光影 / 边缘 / 接触阴影）；② 添加资产——在 PS 图层面板选中素材图层（可多选）后点「＋ 当前图层」，插件会把它们合并成一张与画布对齐的图（位置原样保留），模型只做融合、不再重新摆放":
     "Two ways to use: ① No assets — place the asset layers where you want them in Photoshop, then click Composite: the existing arrangement is blended naturally (lighting / edges / contact shadows); ② With assets — select the asset layers in the Photoshop Layers panel (multi-select) and click “+ Current layer”: they are merged into one canvas-aligned image (positions kept) and the model only blends, never repositions.",
   "补充说明（可选）": "Notes (optional)",
+  "补充说明（可选） · 已填写": "Notes (optional) · filled",
   "云端模型": "Cloud models",
   "本地（ComfyUI）": "Local (ComfyUI)",
   "该本地预设已删除：设置 ▸ 本地 ComfyUI": "This local preset was deleted: Settings ▸ Local ComfyUI",
@@ -406,10 +410,14 @@ I18N.dict.en = {
     "No selection: redrawing the whole image (areas outside a selection cannot be protected; select first to change just a part)",
   "从系统剪贴板粘贴（UXP 里 Cmd+V 可能无效，用这个）":
     "Paste from the system clipboard (Cmd+V may not work inside UXP — use this)",
+  "从系统剪贴板粘贴（UXP 里 Ctrl+V 可能无效，用这个）":
+    "Paste from the system clipboard (Ctrl+V may not work inside UXP — use this)",
   "剪贴板里没有文本（或剪贴板权限未生效）":
     "No text on the clipboard (or clipboard permission is not effective)",
   "已从剪贴板粘贴（Cmd+V 未生效的兜底路径）":
     "Pasted from the clipboard (fallback because Cmd+V did not take effect)",
+  "已从剪贴板粘贴（Ctrl+V 未生效的兜底路径）":
+    "Pasted from the clipboard (fallback because Ctrl+V did not take effect)",
   "✨ 智能分析画面（看图 · 文本 ×1）": "✨ Analyze the image (vision · text ×1)",
   "尚未导出画面（智能分析会自动导出；也可先点下方「预览」确认内容）":
     "Nothing exported yet (Smart analysis exports automatically; or click “Preview” below)",
@@ -477,7 +485,9 @@ I18N.dict.en = {
   /* ===== 模型描述 / 选项后缀 ===== */
   "基础 · 比例/1K": "basic · aspect/1K",
   "默认 · 比例/1K": "default · aspect/1K",
+  "默认 · 最新 · 比例/1K": "default · latest · aspect/1K",
   "比例/1K": "aspect/1K",
+  "最新": "latest",
   "1–4K · 支持透明": "1–4K · alpha",
   "1–4K · 最高质量": "1–4K · best quality",
   "快速 · 仅比例": "fast · aspect only",
@@ -513,8 +523,8 @@ I18N.dict.en = {
   "智谱 GLM": "Zhipu GLM",
   "Kimi（月之暗面）": "Kimi (Moonshot)",
   "豆包（火山方舟）": "Doubao (Volcano Ark)",
-  "国内 (dakka)": "China (dakka)",
-  "全球 (grsaiapi)": "Global (grsaiapi)",
+  "国内线路": "China",
+  "全球线路": "Global",
   "gpt-image 系列": "gpt-image series",
   "nano-banana 系列": "nano-banana series",
   /* ===== 扩图参数 ===== */
@@ -544,26 +554,137 @@ I18N.dict.en = {
   "原图区域可能无法精确对齐；建议减小单侧扩展，或换 nano-banana-2 系列（最高 8:1）。":
     "The original area may not align exactly — reduce one side's expansion, or switch to nano-banana-2 (up to 8:1).",
 
+  /* ===== 运行期提示（toast / 状态行 · 英文发行版补齐） ===== */
+  "未框选、也无可用的图层范围（需选中一个普通图层）→ 将对整个画面执行":
+    "No selection and no usable layer bounds (needs a normal layer selected) — running on the whole canvas",
+  "扩图应用失败：未能定位原文档（文档可能已被关闭，请检查后重试）":
+    "Expand failed: the original document could not be located (it may be closed — check and retry)",
+  "入队时的选区未能保存，为避免改错区域已跳过（请重新加入队列）":
+    "The selection could not be saved when queued, so this item was skipped to avoid editing the wrong area (queue it again)",
+  "保留补充说明、拆图对象和蓝图里的元素，只清空上一次的生成结果":
+    "Keeps the note, split target and blueprint items; clears only the previous result",
+  "可选：对背景补全的额外要求（如「保留地面投影」，留空即可）":
+    "Optional: extra requirements for the background fill (e.g. keep the ground shadow; leave empty if none)",
+  "目标文档创建异常：拿到了原文档本身，已中止（原文档未改动）":
+    "Document creation failed: the original document was returned instead, so the operation was aborted (original untouched)",
+  "请先在设置 ▸ 服务接入中配置图像服务 API Key":
+    "Configure the image service API key first (Settings ▸ Service)",
+  "未配置文本服务：请到 设置 ▸ 文本服务 填写 Key":
+    "Text service not configured: add a key in Settings ▸ Text service",
+  "未配置文本服务：请到 右上角 ⚙ 设置 ▸ 服务接入 ▸ 文本服务 填写 API Key 与模型":
+    "Text service not configured: open ⚙ Settings ▸ Service ▸ Text service and fill in the API key and model",
+  "图片分析模型不支持看图，已改用「补充说明」做文字分析…":
+    "The analysis model does not support vision, so the note is used for text-only analysis…",
+  "将删除未收藏任务的结果图与记录；★ 收藏的任务豁免":
+    "Deletes results and records of every unstarred task; ★ starred tasks are kept",
+  "扩展量为 0：请至少为一个方向设置大于 0 的数值":
+    "Expansion is 0: set a value greater than 0 for at least one side",
+  "扩展后画布过大（上限 8000px），请减小扩展量":
+    "The expanded canvas would exceed 8000 px: reduce the expansion",
+  "智能分析失败：可改用手动填写（蓝图列表可直接编辑）":
+    "Smart analysis failed: fill it in manually (the blueprint list is editable)",
+  "为缺缩略图的旧记录补图（会逐张短暂打开归档图片）":
+    "Backfill thumbnails for old records (each archived image is opened briefly)",
+  "发给文本模型看图分析，识别可拆分的元素并填入蓝图":
+    "Send the image to the text model so it can find splittable elements and fill the blueprint",
+  "连补充说明和蓝图一起清空，回到第一次使用的状态":
+    "Clears the note and blueprint too, back to a first-run state",
+  "找不到结果图层：请在图层面板选中结果图层后重试":
+    "Result layer not found: select the result layer in the Layers panel and retry",
+  "局部重做完成：仅重绘框内区域（其余像素未改动）":
+    "Partial redo done: only the area inside the box was repainted (other pixels untouched)",
+  "（记得检查 API Key 是否属于该平台）":
+    "(check that the API key belongs to this provider)",
+  "未对位（原图里找不到可信位置，保留模型缩放）":
+    "Not aligned (no reliable match in the original, keeping the model scale)",
+  "解析结果无法识别，请换个说法或手动选择功能":
+    "Could not parse that: rephrase it or pick the feature manually",
+  "原文档已关闭，编辑任务已跳过（请重新入队）":
+    "The original document was closed, so this edit was skipped (queue it again)",
+  "请先输入一句话，例如：把背景换成海边沙滩":
+    "Type one line first, e.g. replace the background with a beach",
+  "该结果不支持局部重做（缺少图层定位信息）":
+    "This result does not support partial redo (missing layer position info)",
+  "缓存位置已切换（旧位置内容保留为备份）":
+    "Cache location changed (the old location is kept as a backup)",
+  "已删除本机历史副本（PS 图层不受影响）":
+    "Local history copy deleted (the Photoshop layers are untouched)",
+  "删除本机历史副本（PS 中的图层不受影响）":
+    "Delete the local history copy (layers in Photoshop are untouched)",
+  "生成超时（10 分钟未完成，可稍后在历史中查看）":
+    "Timed out after 10 minutes (check History later)",
+  "本地 ComfyUI 未接入当前功能，请切回云端模型":
+    "Local ComfyUI is not wired into this feature — switch back to a cloud model",
+  "未取到合并图层，已中止（原文档未受影响）":
+    "Could not get the merged layer, aborted (original document untouched)",
+  "复制文档失败：未识别到临时文档，已中止（原文档未受影响）":
+    "Document duplication failed: no temporary document found, aborted (original untouched)",
+  "⚠ 本次没能保存选区通道，改用工作流自带蒙版（结果可能仍有硬边）":
+    "⚠ The selection channel could not be saved this time; using the workflow's own mask instead (edges may still be hard)",
+  "⚠ 有层是模型服务端限流失败的（excessive system load / 取图失败），不是本地出错。":
+    "⚠ Some layers failed because the model service was rate-limited (excessive system load / image fetch failed), not a local error.",
+  "这些层保留的是整幅生成图（没有蒙版）。建议把拆图模型换成 gpt-image-2 / 2.5 后重试。":
+    "These layers kept the full generated image (no mask). Switch the split model to gpt-image-2 / 2.5 and retry.",
+  "本地模型没有「局部重绘」工作流：设置 ▸ 本地 ComfyUI 添加「Klein 4B 局部重绘」模板，或把「本地局部重绘方式」改为整图重绘":
+    "The local model has no local-redraw workflow: add the Klein 4B local-redraw template in Settings ▸ Local ComfyUI, or switch Local redraw mode to full-image redraw",
+  "本地模型没有「参考图」工作流：设置 ▸ 本地 ComfyUI 添加「Klein 4B 参考图」模板":
+    "The local model has no reference-image workflow: add the Klein 4B reference template in Settings ▸ Local ComfyUI",
+  "本地模型没有「文生图」工作流：设置 ▸ 本地 ComfyUI 添加「Klein 4B 文生图」模板":
+    "The local model has no text-to-image workflow: add the Klein 4B text-to-image template in Settings ▸ Local ComfyUI",
+  "未选中图层：请先在 PS 图层面板中选中要添加的图层（可按住 Ctrl/⌘ 多选）":
+    "No layer selected: pick the layers to add in the Photoshop Layers panel first (Ctrl/⌘ for multiple)",
+  "（Key 已过期：请到平台续费或换新 Key，然后在设置 ▸ 图像服务 重新保存）":
+    "(the key expired: renew or replace it on the platform, then save it again in Settings ▸ Image service)",
+  "工作流里找不到正向提示词节点：把该节点标题改成 PROMPT，或在设置里填节点 ID":
+    "No positive-prompt node in the workflow: rename that node's title to PROMPT, or enter its node ID in settings",
+  "已自动退避重试过；若仍失败，等 1–2 分钟再点「再拆一张」即可（描述与蓝图会保留）。":
+    "Automatic backoff retries already ran. If it still fails, wait 1–2 minutes and press Split again (your note and blueprint are kept).",
+  "把一张成品图拆分为多个可编辑图层（看图分析 → 蓝图 → 逐层提取）":
+    "Split a finished image into editable layers (analyze → blueprint → extract layer by layer)",
+  "浏览器预览无法执行拆图，请在 Photoshop 面板中运行":
+    "Splitting cannot run in the browser preview — open the panel inside Photoshop",
+  "建议改用 gpt-image-2 / 2.5 系列。":
+    "Switching to the gpt-image-2 / 2.5 series is recommended.",
+  "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——":
+    "Splitting needs a model that follows \u201cflat magenta backdrop + unchanged position\u201d strictly. Nano models tend to recompose the scene, so keying often fails —",
+  "张候选 —— 请在结果卡中选择一张插入（其余已存入历史）":
+    " candidates — pick one to insert in the result card (the rest are saved to History)",
+  "个候选（已合并去重，可勾选 / 改名 / 增删）":
+    " candidates (merged and de-duplicated; tick, rename, add or remove)",
+  "张 · 来源：PS 选中图层（可多选）或本地文件":
+    " image(s) · source: selected Photoshop layers (multi-select) or local files",
+  "从磁盘选择图片（png / jpg / webp）":
+    "Choose an image from disk (png / jpg / webp)",
+  "选择一种改写方式（消耗 1 次文本请求）":
+    "Pick a rewrite mode (uses 1 text request)",
+  "请先在提示词框输入内容，再让助手改写":
+    "Type something in the prompt box before asking the assistant to rewrite it",
+  "已替换 ✓（可继续让助手改写）":
+    "Replaced ✓ (you can keep rewriting)",
+  "建议已生成 · 「替换原文」应用，或换一种方式再生成":
+    "Suggestion ready · apply it with Replace text, or generate another way",
+  "在 PS 图层面板选中图层（可多选）后点此直接加入，无需先导出文件":
+    "Select layers in the Photoshop Layers panel (multi-select) and click here — no export needed",
+  "正在导出 PS 选中图层…（可多选；图层多时逐张导出）":
+    "Exporting the selected layers… (multi-select; many layers export one by one)",
+  "正在把选中图层合并为一张画布对齐的资产图…":
+    "Merging the selected layers into one canvas-aligned asset image…",
+  "用文本服务改写/扩写/翻译提示词（每次消耗 1 次文本请求）":
+    "Rewrite, expand or translate the prompt with the text service (1 text request each)",
+  "留空 = 使用内置模板（上方灰字即内置模板，可微调后生效）":
+    "Empty = use the built-in template (the grey text above is it; tweak it to override)",
+  "描述要修改的内容…": "Describe what to change…",
+  "补充要求（可留空）…": "Extra requirements (optional)…",
+  "（无需手动选择）": " (no manual selection needed)",
+  "（此功能固定开启）": " (always on for this feature)",
+
   /* ===== 拆图：模型能力提示 ===== */
-  "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——建议改用 gpt-image-2 / 2.5 / 2.6 系列。":
-    "Splitting needs a model that follows \u201cflat magenta backdrop + unchanged position\u201d strictly. Nano models tend to recompose the scene, so keying often fails — gpt-image-2 / 2.5 / 2.6 is recommended."
+  "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——建议改用 gpt-image-2 / 2.5 系列。":
+    "Splitting needs a model that follows \u201cflat magenta backdrop + unchanged position\u201d strictly. Nano models tend to recompose the scene, so keying often fails — gpt-image-2 / 2.5 is recommended."
 };
 
 /* 组合型文案：正则 → 英文（$1… 为捕获组） */
 I18N.patterns = [
-  [/^已适配 (\d+) 个预设：(.+)$/, "Matched $1 preset(s): $2"],
-  [/^本机模型已与工作流一致（(\d+) 个预设），无需改动$/, "Local models already match the workflow ($1 preset(s))"],
-  [/^缺节点：(.+)（装 ComfyUI-GGUF，或导入用标准加载器的工作流）$/,
-    "Missing nodes: $1 (install ComfyUI-GGUF, or import a workflow using standard loaders)"],
-  [/^缺模型文件：(.+)$/, function (full, body) {
-    return "Missing model files: " + String(body)
-      .replace(/（本机有 (.+?)）/g, "(available: $1)")
-      .replace(/（本机没有同类文件）/g, "(no similar file locally)");
-  }],
-  [/^本机另有 (\d+) 个模型没配工作流：(.+)（需要各自的 API 工作流）$/, "$1 more local model(s) without a workflow: $2 (each needs its own API workflow)"],
-  [/^连不上 ComfyUI：(\d+) 个预设$/, "Cannot reach ComfyUI: $1 preset(s)"],
-  [/^已添加 (\d+) 个内置模板，正在按本机模型适配…$/, "Added $1 built-in template(s); matching local models…"],
-  [/^适配失败：(.+)$/, "Matching failed: $1"],
   [/^候选 (\d+) 张$/, "Candidates $1"],
   [/^候选 (\d+)$/, "Candidates $1"],
   [/^(\d+) 张候选$/, "$1 candidates"],
@@ -662,6 +783,16 @@ I18N.patterns = [
   [/^全部 (\d+)$/, "All $1"],
   [/^成功 (\d+)$/, "Succeeded $1"],
   [/^失败 (\d+)$/, "Failed $1"],
+  /* 数字 + 片段拼接（英文发行版补齐） */
+  [/^(\d+)张候选 —— 请在结果卡中选择一张插入（其余已存入历史）$/,
+    "$1 candidates — pick one to insert in the result card (the rest are in History)"],
+  [/^(\d+)个候选（已合并去重，可勾选 \/ 改名 \/ 增删）$/,
+    "$1 candidates (merged and de-duplicated; tick, rename, add or remove)"],
+  [/^(\d+)张 · 来源：PS 选中图层（可多选）或本地文件$/,
+    "$1 image(s) · source: selected Photoshop layers (multi-select) or local files"],
+  [/^(\d+) 个图层导出失败：(.*)$/, "$1 layer(s) failed to export: $2"],
+  [/^未框选 · 按整幅画面处理 · (.+)$/,
+    function (full, x) { return "No selection · whole image · " + i18nText(x); }],
   [/^★ 收藏 (\d+)$/, "★ Favorites $1"]
 ];
 

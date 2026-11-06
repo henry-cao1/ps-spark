@@ -278,7 +278,8 @@ ${devBlock}
   - Double-click Start-ComfyUI.bat (localhost only)
   - LAN access: Start-ComfyUI.bat -lan
   - Another port: Start-ComfyUI.bat -port 8189
-  - Settings > Local ComfyUI > Add built-in template (text-to-image / reference / inpaint)
+  - Settings > Local ComfyUI > Add built-in template (text-to-image / reference / inpaint /
+    generic checkpoint; Qwen-Image and HiDream presets included)
   - Local models are supported, but you adapt the workflow to the files installed
     on your machine (Adapt local models). The models tested on Windows and on
     macOS are not the same set, so a preset may need adapting after moving machines.
@@ -341,7 +342,8 @@ ${devBlock}
   - 双击 Start-ComfyUI.bat 启动（仅本机可访问）
   - 跨机：Start-ComfyUI.bat -lan
   - 换端口：Start-ComfyUI.bat -port 8189
-  - 设置 ▸ 本地 ComfyUI ▸ 添加内置模板（文生图 / 参考图 / 局部重绘）
+  - 设置 ▸ 本地 ComfyUI ▸ 添加内置模板（文生图 / 参考图 / 局部重绘 / 通用 Checkpoint，
+    另含 Qwen-Image、HiDream 预设）
   - 支持本地模型，但需按本机模型文件自行适配（适配本机模型）；
     Windows 与 macOS 测试用的本地模型不是同一套，换机器后可能需要重新适配
 
@@ -374,6 +376,11 @@ async function main() {
   const isDev = args.channel !== "release";
   const lang = args.lang === "en" ? "en" : "zh";
   const manifest = JSON.parse(await readFile(path.join(ROOT, "ps-spark-plugin", "manifest.json"), "utf8"));
+  /* id 是存储隔离键：和 macOS 包必须是同一个，否则升级后 Key/预设/历史全要重填 */
+  if (manifest.id !== "com.psspark.ps.assistant") {
+    throw new Error("manifest.id 必须是 com.psspark.ps.assistant，当前是 " + manifest.id);
+  }
+  const id = manifest.id;
   const ver = manifest.version;
   const date = today();
 
@@ -392,15 +399,25 @@ async function main() {
   await rm(stage, { recursive: true, force: true });
   await mkdir(stage, { recursive: true });
 
-  await cp(srcDir, path.join(stage, "com.psspark.ps.assistant_" + ver), { recursive: true });
+  await cp(srcDir, path.join(stage, id + "_" + ver), { recursive: true });
   for (const f of ["LICENSE", "NOTICE", "Start-ComfyUI.bat"]) {
     const p = path.join(ROOT, f);
     if (existsSync(p)) await copyFile(p, path.join(stage, f));
   }
-  const notes = lang === "en" ? installNotesEn(ver, isDev, lang, date) : installNotes(ver, isDev, lang, date);
-  const bat = (lang === "en" ? INSTALL_BAT_EN : INSTALL_BAT).replace(/__VER__/g, ver);
+  const notes = (lang === "en" ? installNotesEn(ver, isDev, lang, date) : installNotes(ver, isDev, lang, date))
+    .split("com.psspark.ps.assistant").join(id);
+  const bat = (lang === "en" ? INSTALL_BAT_EN : INSTALL_BAT)
+    .replace(/__VER__/g, ver).split("com.psspark.ps.assistant").join(id);
   await writeText(path.join(stage, "INSTALL-Windows.txt"), notes, true);
   await writeText(path.join(stage, "Install-Windows.bat"), bat, false);
+
+  /* 交付前再核对一次：目录名、manifest、说明里的路径必须是同一个 id / 版本 */
+  const staged = JSON.parse(await readFile(path.join(stage, id + "_" + ver, "manifest.json"), "utf8"));
+  if (staged.id !== id || staged.version !== ver) {
+    throw new Error("交付包自检失败：" + staged.id + " / " + staged.version +
+      "（应为 " + id + " / " + ver + "）");
+  }
+  if (notes.indexOf(id + "_" + ver) < 0) throw new Error("安装说明里的目录名与 id 不一致");
 
   /* 3) 打包（文件名全 ASCII，避免 Windows 端解压乱码） */
   const outZip = path.join(DIST, folder + ".zip");

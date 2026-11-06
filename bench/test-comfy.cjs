@@ -9,6 +9,16 @@ const { JSDOM } = require("jsdom");
 
 const ROOT = path.resolve(__dirname, "../ps-spark-plugin");
 
+/* /object_info 的模拟应答：节点存在且没有额外必填项。
+ * callComfyUI 提交前会做 preflight（缺节点/缺模型文件提前报错），
+ * 返回 "{}" 会被当成「这台机器没装该节点」而拒绝提交。 */
+function objectInfoBody(url) {
+  const cls = decodeURIComponent(String(url).split("/object_info/")[1] || "");
+  const out = {};
+  out[cls] = { input: { required: {} } };
+  return JSON.stringify(out);
+}
+
 let pass = 0, fail = 0;
 function ck(name, ok, detail) {
   if (ok) { pass++; console.log("PASS | " + name + (detail ? " -> " + detail : "")); }
@@ -136,6 +146,7 @@ w.document.body.appendChild(stub);
     if (u.indexOf("/history/") >= 0) {
       return { status: 200, response: JSON.stringify({ pm: { status: { status_str: "success" }, outputs: { "9": { images: [{ filename: "m.png", subfolder: "", type: "output" }] } } } }) };
     }
+    if (u.indexOf("/object_info/") >= 0) return { status: 200, response: objectInfoBody(u) };
     return { status: 200, response: "{}" };
   };
   const multiUrl = await w.eval('callComfyUI("multi", {}, "' + P_MULTI + '")');
@@ -159,6 +170,7 @@ w.document.body.appendChild(stub);
         })
       };
     }
+    if (String(opt.url).indexOf("/object_info/") >= 0) return { status: 200, response: objectInfoBody(opt.url) };
     return { status: 200, response: "{}" };
   };
 
@@ -270,6 +282,7 @@ w.document.body.appendChild(stub);
     if (u.indexOf("/history/") >= 0) {
       return { status: 200, response: JSON.stringify({ p9: { status: { status_str: "success" }, outputs: { "9": { images: [{ filename: "o.png", subfolder: "", type: "output" }] } } } }) };
     }
+    if (u.indexOf("/object_info/") >= 0) return { status: 200, response: objectInfoBody(u) };
     return { status: 200, response: "{}" };
   };
 
@@ -313,9 +326,10 @@ w.document.body.appendChild(stub);
   w.setGenModelOverride("");
   /* 10) 内置模板：新机器一键建预设，重复添加不重复 */
   const beforeTpl = w.eval("getComfyPresets().length");
+  const tplCount = w.eval("COMFY_TEMPLATES.length");
   const addedTpl = w.eval('comfyApplyTemplates("http://127.0.0.1:8188")');
-  ck("模板：一键添加 4 条内置预设", addedTpl === 4 && w.eval("getComfyPresets().length") === beforeTpl + 4,
-    "added=" + addedTpl);
+  ck("模板：一键添加全部内置预设", addedTpl === tplCount && w.eval("getComfyPresets().length") === beforeTpl + tplCount,
+    "added=" + addedTpl + "/" + tplCount);
   const tpls = w.eval('getComfyPresets().filter(function(p){return !!p.templateKey;})');
   const tpl = tpls.filter(function (x) { return x.caps.indexOf("t2i") >= 0; })[0];
   const tplI2I = tpls.filter(function (x) { return x.templateKey === "klein4b-i2i"; })[0];
@@ -636,10 +650,10 @@ w.document.body.appendChild(stub);
   ck("粘贴：有光标时插到光标处", taT.value === "abc-X-def" && changed === 2, taT.value);
 
   ck("粘贴：页面里有「📋 粘贴」按钮",
-    !!d.querySelector(".prompt-tools button.p-btn"), "prompt-tools 未渲染");
+    !!d.querySelector(".prompt-tools .p-btn"), "prompt-tools 未渲染");
   const cssTxt = d.querySelector("style") ? d.querySelector("style").textContent : "";
   ck("历史按钮：禁用态有独立 class 样式（不依赖 :disabled）",
-    /\.hj-actions button\.is-dis/.test(cssTxt), "缺 .hj-actions button.is-dis");
+    /\.hj-actions (button|\.btn)\.is-dis/.test(cssTxt), "缺 .hj-actions button.is-dis");
   ck("历史按钮：有自绘说明浮层样式", /\.hj-tip\s*\{/.test(cssTxt), "缺 .hj-tip");
 
   /* 23) 运行闸门：无选区时局部重绘放行（按整幅画面），换色仍要求选区 */

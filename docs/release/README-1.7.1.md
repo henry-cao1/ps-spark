@@ -17,19 +17,24 @@ The language can be switched at runtime under Settings ▸ Language.
 
 ## What's new
 
-- **Windows package** — result files are saved with their real extension: a GIF result is written
-  as `.gif` instead of GIF bytes inside a `.png`. History, thumbnails and previews accept GIF, and
-  data URIs use the correct MIME type, so the preview animates. `gpt-image-2.6` GIF output works
-  end to end; Photoshop places it as a single-frame smart object (use *File ▸ Import ▸ Video
-  Frames to Layers* if you need every frame).
-- **Both packages** — model catalog adds `gpt-image-2.6` and uses it as the default for new
-  installs.
-- Version 1.7.1 aligns the release tag and source archive with the shipped macOS package; 1.7.0
-  had the 2.6 code only on `main`.
-
-> **Windows manifest id:** this Windows build uses `com.psspark.ps.spark`. Its installer removes
-> older `com.psspark.ps.assistant_*` copies, so you will not get two panels, but API keys, presets
-> and history are scoped by id and need to be set up once after upgrading.
+- **Result files keep their real format** — a GIF result is written as `.gif` instead of GIF bytes
+  inside a `.png`. History, thumbnails and previews accept GIF, and data URIs use the correct MIME
+  type, so the preview animates. `gpt-image-2.6` GIF output works end to end; Photoshop places it
+  as a single-frame smart object (use *File ▸ Import ▸ Video Frames to Layers* if you need every
+  frame). This applies to both the Windows and the macOS package.
+- **Both packages share one plugin id** — `com.psspark.ps.assistant`. The earlier Windows 1.7.1
+  build used `com.psspark.ps.spark`, which made it a separate plugin for Photoshop's storage:
+  keys, presets and history did not carry over. Both installers now upgrade in place.
+- **More local workflows** — built-in templates grew from 4 to 12 and cover Qwen-Image 2.1,
+  MOSS-Image, MiniMax H3, HiDream O1 and a generic checkpoint graph. A pre-submit preflight
+  reports missing nodes or model files instead of failing inside ComfyUI, reference images are
+  aligned to the workflow's grid step, and image-to-image runs from a VAE-encoded latent so the
+  result actually follows the reference.
+- **History thumbnails** — past results get cached thumbnails, with a manual backfill for older
+  entries.
+- **Model catalog** adds `gpt-image-2.6` and uses it as the default for new installs.
+- Version 1.7.1 aligns the release tag and source archive with the shipped packages; 1.7.0 had
+  the 2.6 code only on `main`.
 
 ## Features
 
@@ -51,7 +56,7 @@ The language can be switched at runtime under Settings ▸ Language.
 ## Install — Windows
 
 1. Download the Windows package above and extract it.
-2. Run `Install-Windows.bat`, or copy the `com.psspark.ps.spark_1.7.1` folder into
+2. Run `Install-Windows.bat`, or copy the `com.psspark.ps.assistant_1.7.1` folder into
    `%APPDATA%\Adobe\UXP\Plugins\External\`.
 3. In Photoshop: Edit ▸ Preferences ▸ Plug-ins ▸ enable **Developer Mode**.
 4. Restart Photoshop, then open **Plugins ▸ PS Spark**.

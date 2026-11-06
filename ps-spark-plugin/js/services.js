@@ -1,9 +1,9 @@
 /*
  * services.js — 服务接入与配置存储（W0 骨架）
- * - 双服务结构：图像服务 / 文本服务（OpenAI 兼容）
+ * - 双服务结构：图像服务（PS Spark）/ 文本服务（DeepSeek 等，OpenAI 兼容）
  * - 模型分配 / 默认参数 / 诊断开关
  * - 密钥：secureStorage 优先 + localStorage 兜底（保留 coerceKey 字节数组还原）
- * - 旧键兼容：pssparkBaseUrl → psspark.imageService
+ * - 旧键迁移：pssparkBaseUrl → psspark.imageService
  */
 
 /* ---------------- 基础存取 ---------------- */
@@ -246,7 +246,7 @@ async function loadSecret(secureName, fallbackName) {
   }
 }
 
-/* 图像服务 */
+/* 图像服务（PS Spark） */
 async function getImageKey() { return loadSecret("pssparkApiKey", "pssparkApiKeyFallback"); }
 async function saveImageKey(k) { return saveSecret("pssparkApiKey", "pssparkApiKeyFallback", k); }
 /* 文本服务（DeepSeek 等） */
@@ -339,6 +339,19 @@ function setDiagFlag(v) {
 
 const DEFAULT_COMFY = { url: "http://127.0.0.1:8188", workflow: "", promptNode: "" };
 const COMFY_STORE_KEY = "psspark.comfy";
+
+/* Windows 专属坑（mac 上不会出现）：
+ * 1) http://localhost:8188 在本机先解析到 IPv6 ::1，而 ComfyUI 默认只监听 127.0.0.1，
+ *    表现就是"ComfyUI 明明开着，插件却连不上"；
+ * 2) 用户手填 127.0.0.1:8188 时没有 scheme，XHR.open 直接抛 SYNTAX_ERR。
+ * 统一在入口处把地址规范化，后续所有请求都走这一份。 */
+function comfyNormalizeUrl(u) {
+  let s = String(u || "").trim().replace(/\/+$/, "");
+  if (!s) return s;
+  if (!/^https?:\/\//i.test(s)) s = "http://" + s.replace(/^\/+/, "");
+  s = s.replace(/^(https?:\/\/)localhost(?=[:/]|$)/i, function (m, p1) { return p1 + "127.0.0.1"; });
+  return s.replace(/\/+$/, "");
+}
 const COMFY_CAPS = [
   ["t2i", "文生图"],
   ["i2i", "参考图"],
@@ -430,6 +443,232 @@ const COMFY_TEMPLATES = [{
     "10": { class_type: "SaveImage", inputs: { images: ["9", 0], filename_prefix: "psspark_inpaint" }, _meta: { title: "OUTPUT" } }
   })
 }, {
+  /* 上面三条是 GGUF 路线：需要装 ComfyUI-GGUF 自定义节点 + GGUF 模型文件。
+     本机没装 GGUF 节点时，这三条一条也跑不起来；这条只用 ComfyUI 自带的
+     UNETLoader / CLIPLoader / VAELoader，装好官方模型即可用（已在本机实测跑通）。 */
+  key: "qwen21-t2i",
+  name: "Qwen Image 2.1 文生图",
+  caps: ["t2i"],
+  alpha: "none",
+  steps: 25,
+  cfg: 1,
+  denoise: null,
+  roles: { prompt: "4" },
+  workflow: JSON.stringify({
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "qwen_image_2.1_int8_convrot.safetensors", weight_dtype: "default" }, _meta: { title: "UNET" } },
+    /* qwen_image_2.1 的文本编码器是 qwen3vl_8b（不是封面的 prompt enhancer qwen3.5_9b），type 必须是 qwen_image */
+    "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen3vl_8b_int8_convrot.safetensors", type: "qwen_image", device: "default" }, _meta: { title: "CLIP" } },
+    "3": { class_type: "VAELoader", inputs: { vae_name: "qwen_image_2.1_vae_bf16.safetensors" }, _meta: { title: "VAE" } },
+    /* 这个编码节点一个节点同时输出正/负条件（槽 0 / 槽 1），字段名是 prompt 而不是 text */
+    "4": { class_type: "TextEncodeQwenImage21", inputs: { clip: ["2", 0], prompt: "", negative_prompt: "", resolution: 1024, images: {} }, _meta: { title: "PROMPT" } },
+    "5": { class_type: "EmptyLatentImage", inputs: { width: 1024, height: 1024, batch_size: 1 }, _meta: { title: "SIZE" } },
+    "6": { class_type: "KSampler", inputs: { model: ["1", 0], seed: 42, steps: 25, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1, positive: ["4", 0], negative: ["4", 1], latent_image: ["5", 0] }, _meta: { title: "SAMPLER" } },
+    "7": { class_type: "VAEDecode", inputs: { samples: ["6", 0], vae: ["3", 0] }, _meta: { title: "DECODE" } },
+    "8": { class_type: "SaveImage", inputs: { images: ["7", 0], filename_prefix: "psspark_qwen21" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* 取自 ComfyUI 官方模板 image_moss_image_t2i，去掉官方那条 prompt-enhancer 子图分支：
+     增强器要额外挂一个文本大模型，插件只要「提示词进 → 图出」。
+     CLIP 官方写的是 qwen3.5_9b_w4a8_gptq.safetensors，本机装的是同架构 int8 量化，
+     实测（512×512 / 8 步）能正常编码出图，所以这里按本机实际文件名写。 */
+  key: "moss-t2i",
+  name: "MOSS-Image 文生图",
+  caps: ["t2i"],
+  alpha: "none",
+  steps: 25,
+  cfg: 2.5,
+  denoise: null,
+  roles: { prompt: "4" },
+  workflow: JSON.stringify({
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "moss_image_sft_int8_convrot.safetensors", weight_dtype: "default" }, _meta: { title: "UNET" } },
+    "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen3.5_9b_int8_convrot.safetensors", type: "moss_image", device: "default" }, _meta: { title: "CLIP" } },
+    "3": { class_type: "VAELoader", inputs: { vae_name: "flux2-vae_small.safetensors" }, _meta: { title: "VAE" } },
+    "4": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["2", 0] }, _meta: { title: "PROMPT" } },
+    "5": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["2", 0] }, _meta: { title: "NEGATIVE" } },
+    /* MOSS-Image 是 flux2 系 latent，空 latent 必须用 EmptyFlux2LatentImage，不能用 EmptyLatentImage */
+    "6": { class_type: "EmptyFlux2LatentImage", inputs: { width: 1024, height: 1024, batch_size: 1 }, _meta: { title: "SIZE" } },
+    "7": { class_type: "KSampler", inputs: { model: ["1", 0], seed: 42, steps: 25, cfg: 2.5, sampler_name: "er_sde", scheduler: "simple", denoise: 1, positive: ["4", 0], negative: ["5", 0], latent_image: ["6", 0] }, _meta: { title: "SAMPLER" } },
+    "8": { class_type: "VAEDecode", inputs: { samples: ["7", 0], vae: ["3", 0] }, _meta: { title: "DECODE" } },
+    "9": { class_type: "SaveImage", inputs: { images: ["8", 0], filename_prefix: "psspark_moss" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* 取自 ComfyUI 官方模板 image_moss_image_edit：在 MOSS-Image SFT 上挂官方「指令编辑」LoRA
+     （loras/moss_image_edit_lora_rank_64_bf16.safetensors，297MB），参考图和指令一起进
+     TextEncodeMOSSImageEdit 编码，采样器重画同一帧、只改描述的部分。
+     本机实测（768 原图 / 30 步 / euler normal / cfg 4）：约 155 秒，人物、姿势、服装颜色全部保留，
+     只把背景换成了指定的纯白墙——这是目前唯一一条真正「按指令改图」的本地链路。
+     两处按本机实际替换：CLIP 官方是 qwen3.5_9b_w4a8_gptq，本机用同架构 int8_convrot；
+     VAE 用 flux2-vae_small（本机没有完整版 flux2-vae）。
+     ⚠ images 这个动态输入在 API 格式里必须写成扁平的 "images.image_0"，写成
+       images:{image_0:…} 会被 ComfyUI 判定为缺输入（实测三种写法只有扁平这种通过）。 */
+  key: "moss-edit",
+  name: "MOSS-Image 指令编辑",
+  caps: ["i2i"],
+  alpha: "none",
+  steps: 30,
+  cfg: 4,
+  denoise: 1,
+  roles: { prompt: "10", input: "6", output: "14" },
+  workflow: JSON.stringify({
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "moss_image_sft_int8_convrot.safetensors", weight_dtype: "default" }, _meta: { title: "UNET" } },
+    "2": { class_type: "LoraLoaderModelOnly", inputs: { model: ["1", 0], lora_name: "moss_image_edit_lora_rank_64_bf16.safetensors", strength_model: 1 } },
+    /* 官方在 LoRA 后挂 SkipLayerGuidance：只在 single_layers "22" 上跳层，全程生效 */
+    "3": { class_type: "SkipLayerGuidanceDiTSimple", inputs: { model: ["2", 0], double_layers: "", single_layers: "22", start_percent: 0, end_percent: 1 } },
+    "4": { class_type: "CLIPLoader", inputs: { clip_name: "qwen3.5_9b_int8_convrot.safetensors", type: "moss_image", device: "default" }, _meta: { title: "CLIP" } },
+    "5": { class_type: "VAELoader", inputs: { vae_name: "flux2-vae_small.safetensors" }, _meta: { title: "VAE" } },
+    "6": { class_type: "LoadImage", inputs: { image: "" }, _meta: { title: "INPUT" } },
+    /* 参考图先缩到约 1MP、对齐 16px，既省显存也符合编辑 LoRA 的训练分辨率 */
+    "7": { class_type: "ImageScaleToTotalPixels", inputs: { image: ["6", 0], upscale_method: "lanczos", megapixels: 1, resolution_steps: 16 } },
+    "8": { class_type: "GetImageSize", inputs: { image: ["7", 0] } },
+    "9": { class_type: "EmptyFlux2LatentImage", inputs: { width: ["8", 0], height: ["8", 1], batch_size: 1 }, _meta: { title: "SIZE" } },
+    "10": { class_type: "TextEncodeMOSSImageEdit", inputs: { clip: ["4", 0], prompt: "", edit_format: "Moss-Image-Edit", "images.image_0": ["7", 0], image_strength: 1, vae: ["5", 0] }, _meta: { title: "PROMPT" } },
+    "11": { class_type: "TextEncodeMOSSImageEdit", inputs: { clip: ["4", 0], prompt: "nsfw, worst quality, bad anatomy, watermark, jpeg artifact", edit_format: "Moss-Image-Edit", "images.image_0": ["7", 0], image_strength: 1, vae: ["5", 0] }, _meta: { title: "NEGATIVE" } },
+    "12": { class_type: "KSampler", inputs: { model: ["3", 0], seed: 42, steps: 30, cfg: 4, sampler_name: "euler", scheduler: "normal", denoise: 1, positive: ["10", 0], negative: ["11", 0], latent_image: ["9", 0] }, _meta: { title: "SAMPLER" } },
+    "13": { class_type: "VAEDecode", inputs: { samples: ["12", 0], vae: ["5", 0] }, _meta: { title: "DECODE" } },
+    /* 模型按 1MP 出图，结尾按原图尺寸缩回去，免得 PS 里图层大小被改 */
+    "16": { class_type: "GetImageSize", inputs: { image: ["6", 0] } },
+    "15": { class_type: "ImageScale", inputs: { image: ["13", 0], upscale_method: "lanczos", width: ["16", 0], height: ["16", 1], crop: "disabled" } },
+    "14": { class_type: "SaveImage", inputs: { images: ["15", 0], filename_prefix: "psspark_moss_edit" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* 取自 ComfyUI 官方模板 image_minimax_h3_t2i。官方在 UNET 后面挂了一个 8 步 turbo LoRA，
+    本机没装那个 LoRA，所以用官方注释里的默认值 30 步（步数写在 BasicScheduler，不受 overrides 影响）。
+     CLIP 官方是 nvfp4_awq 量化，本机是 int4_convrot，同架构，实测（512×512 / 8 步）能出图。 */
+  key: "minimax-h3-t2i",
+  name: "MiniMax H3 文生图",
+  caps: ["t2i"],
+  alpha: "none",
+  steps: 30,
+  cfg: 1,
+  denoise: null,
+  roles: { prompt: "4" },
+  workflow: JSON.stringify({
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "minimax_h3_fl2va_pruned_int8_convrot.safetensors", weight_dtype: "default" }, _meta: { title: "UNET" } },
+    "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen3vl_32b_minimax_h3_int4_convrot.safetensors", type: "minimax", device: "default" }, _meta: { title: "CLIP" } },
+    "3": { class_type: "VAELoader", inputs: { vae_name: "minimax_h3_video_vae_fp16.safetensors" }, _meta: { title: "VAE" } },
+    "4": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["2", 0] }, _meta: { title: "PROMPT" } },
+    "5": { class_type: "EmptyLatentImage", inputs: { width: 1024, height: 1024, batch_size: 1 }, _meta: { title: "SIZE" } },
+    /* H3 走的是自定义采样链（BasicGuider + SamplerCustomAdvanced），没有 KSampler 的 cfg/denoise 概念 */
+    "6": { class_type: "BasicGuider", inputs: { model: ["1", 0], conditioning: ["4", 0] } },
+    "7": { class_type: "RandomNoise", inputs: { noise_seed: 42 } },
+    "8": { class_type: "KSamplerSelect", inputs: { sampler_name: "res_multistep" } },
+    "9": { class_type: "BasicScheduler", inputs: { model: ["1", 0], scheduler: "simple", steps: 30, denoise: 1 } },
+    "10": { class_type: "SamplerCustomAdvanced", inputs: { noise: ["7", 0], guider: ["6", 0], sampler: ["8", 0], sigmas: ["9", 0], latent_image: ["5", 0] } },
+    /* H3 的模型本来是"首尾帧 → 视频+音频"，latent 是 AV 合体；分离后取第 0 个槽（图像）解码 */
+    "11": { class_type: "LTXVSeparateAVLatent", inputs: { av_latent: ["10", 0] } },
+    "12": { class_type: "VAEDecode", inputs: { samples: ["11", 0], vae: ["3", 0] }, _meta: { title: "DECODE" } },
+    "13": { class_type: "SaveImage", inputs: { images: ["12", 0], filename_prefix: "psspark_minimax" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* 取自 ComfyUI 官方模板 image_hidream_o1_dev。官方那张图同时挂了「参考图编辑」和「提示词增强」
+     两条分支（HiDreamO1ReferenceImages / 文本大模型），插件只用「提示词进 → 图出」，
+     所以这里只保留纯文生图链路：CheckpointLoaderSimple 自带 CLIP 与 VAE。
+     采样是 O1 专用的 SamplerCustom + SamplerLCM，模型要先过 ModelNoiseScale(7.6)。
+     本机 RTX 3070 8GB 实测：1024×1024 / 8 步 25 秒出图。 */
+  key: "hidream-o1-t2i",
+  name: "HiDream O1 文生图",
+  caps: ["t2i"],
+  alpha: "none",
+  steps: 28,
+  cfg: 1,
+  denoise: null,
+  roles: { prompt: "4" },
+  workflow: JSON.stringify({
+    "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "hidream_o1_image_dev_fp8_scaled.safetensors" }, _meta: { title: "CHECKPOINT" } },
+    "2": { class_type: "ModelNoiseScale", inputs: { model: ["1", 0], noise_scale: 7.6 } },
+    "3": { class_type: "BasicScheduler", inputs: { model: ["2", 0], scheduler: "normal", steps: 28, denoise: 1 } },
+    "4": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["1", 1] }, _meta: { title: "PROMPT" } },
+    "5": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["1", 1] }, _meta: { title: "NEGATIVE" } },
+    "6": { class_type: "EmptyHiDreamO1LatentImage", inputs: { width: 1024, height: 1024, batch_size: 1 }, _meta: { title: "SIZE" } },
+    "7": { class_type: "SamplerLCM", inputs: { s_noise: 1, s_noise_end: 1, noise_clip_std: 2.5 } },
+    "8": { class_type: "SamplerCustom", inputs: { model: ["2", 0], add_noise: true, noise_seed: 42, cfg: 1, positive: ["4", 0], negative: ["5", 0], sampler: ["7", 0], sigmas: ["3", 0], latent_image: ["6", 0] }, _meta: { title: "SAMPLER" } },
+    "9": { class_type: "VAEDecode", inputs: { samples: ["8", 0], vae: ["1", 2] }, _meta: { title: "DECODE" } },
+    "10": { class_type: "SaveImage", inputs: { images: ["9", 0], filename_prefix: "psspark_hidream" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* Qwen Image 2.1 的参考图编辑：官方模板 image_qwen_image_2_1_image_edit 走 TextEncodeQwenImage21
+     的 images 动态输入（参考图会被编成 latent 拼进序列），比普通 img2img 更听话。
+     模型固定输出 1024，所以结尾按原图尺寸缩回去，免得 PS 里图层尺寸被改。
+     本机实测：768 原图 → 输出缩回 768，约 40 秒。 */
+  key: "qwen21-i2i",
+  name: "Qwen Image 2.1 参考图",
+  caps: ["i2i"],
+  alpha: "none",
+  steps: 25,
+  cfg: 1,
+  denoise: 1,
+  roles: { prompt: "4", input: "5", output: "8" },
+  workflow: JSON.stringify({
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "qwen_image_2.1_int8_convrot.safetensors", weight_dtype: "default" }, _meta: { title: "UNET" } },
+    "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen3vl_8b_int8_convrot.safetensors", type: "qwen_image", device: "default" }, _meta: { title: "CLIP" } },
+    "3": { class_type: "VAELoader", inputs: { vae_name: "qwen_image_2.1_vae_bf16.safetensors" }, _meta: { title: "VAE" } },
+    "5": { class_type: "LoadImage", inputs: { image: "" }, _meta: { title: "INPUT" } },
+    "4": { class_type: "TextEncodeQwenImage21", inputs: { clip: ["2", 0], prompt: "", negative_prompt: "", resolution: 1024, "images.image_1": ["5", 0], vae: ["3", 0] }, _meta: { title: "PROMPT" } },
+    "6": { class_type: "KSampler", inputs: { model: ["1", 0], seed: 42, steps: 25, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1, positive: ["4", 0], negative: ["4", 1], latent_image: ["4", 2] }, _meta: { title: "SAMPLER" } },
+    "7": { class_type: "VAEDecode", inputs: { samples: ["6", 0], vae: ["3", 0] }, _meta: { title: "DECODE" } },
+    "11": { class_type: "GetImageSize", inputs: { image: ["5", 0] } },
+    "12": { class_type: "ImageScale", inputs: { image: ["7", 0], upscale_method: "lanczos", width: ["11", 0], height: ["11", 1], crop: "disabled" } },
+    "8": { class_type: "SaveImage", inputs: { images: ["12", 0], filename_prefix: "psspark_qwen_i2i" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* Qwen Image 2.1 的局部重绘：官方没有 2.1 专用的 inpaint 模板（InstantX 那条是 Qwen-Image 1.0 的 ControlNet），
+     这里用通用做法——原图走 VAEEncodeForInpaint 加噪、KSampler 只重绘蒙版区，同时把原图当参考图喂给编码器。
+     本机实测：768 图 + 中央方块蒙版，24 秒，蒙版外完全不变；蒙版边缘会有一点点拼接感（它不是专用 inpaint 模型）。 */
+  key: "qwen21-inpaint",
+  name: "Qwen Image 2.1 局部重绘",
+  caps: ["inpaint"],
+  alpha: "none",
+  steps: 25,
+  cfg: 1,
+  denoise: 1,
+  roles: { prompt: "4", input: "5", mask: "6", output: "10" },
+  workflow: JSON.stringify({
+    "1": { class_type: "UNETLoader", inputs: { unet_name: "qwen_image_2.1_int8_convrot.safetensors", weight_dtype: "default" }, _meta: { title: "UNET" } },
+    "2": { class_type: "CLIPLoader", inputs: { clip_name: "qwen3vl_8b_int8_convrot.safetensors", type: "qwen_image", device: "default" }, _meta: { title: "CLIP" } },
+    "3": { class_type: "VAELoader", inputs: { vae_name: "qwen_image_2.1_vae_bf16.safetensors" }, _meta: { title: "VAE" } },
+    "5": { class_type: "LoadImage", inputs: { image: "" }, _meta: { title: "INPUT" } },
+    "6": { class_type: "LoadImageMask", inputs: { image: "", channel: "red" }, _meta: { title: "MASK" } },
+    "4": { class_type: "TextEncodeQwenImage21", inputs: { clip: ["2", 0], prompt: "", negative_prompt: "", resolution: 1024, images: { image1: ["5", 0] }, vae: ["3", 0] }, _meta: { title: "PROMPT" } },
+    "7": { class_type: "VAEEncodeForInpaint", inputs: { pixels: ["5", 0], vae: ["3", 0], mask: ["6", 0], grow_mask_by: 6 } },
+    "8": { class_type: "KSampler", inputs: { model: ["1", 0], seed: 42, steps: 25, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1, positive: ["4", 0], negative: ["4", 1], latent_image: ["7", 0] }, _meta: { title: "SAMPLER" } },
+    "9": { class_type: "VAEDecode", inputs: { samples: ["8", 0], vae: ["3", 0] }, _meta: { title: "DECODE" } },
+    "10": { class_type: "SaveImage", inputs: { images: ["9", 0], filename_prefix: "psspark_qwen_inpaint" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
+  /* HiDream O1 的参考图编辑：接线取自官方模板 image_hidream_o1_dev 的参考图分支
+     （LoadImage → HiDreamO1ReferenceImages → SamplerCustom），latent 一侧按参考图尺寸出图。
+     ⚠ 实测提醒：本机 RTX 3070 8GB 上链路能跑通（768 约 18~21 秒），但参考图对画面的引导极弱——
+       A/B 对照（同 seed 42、提示词 "a cat"、带/不带参考图）出的是两张内容相同的写实橘猫，
+       md5 不同但肉眼几乎一致，说明输入生效却几乎不改画面结构。
+       要「保留原图结构」的编辑请优先用上面的 Qwen Image 2.1 参考图。
+     采样是 O1 专用的 SamplerCustom + SamplerLCM，步数写在 BasicScheduler（不受 overrides 影响）。 */
+  key: "hidream-o1-i2i",
+  /* 名字里带「引导弱」是故意的：实测它基本按提示词出图、几乎不看参考图，
+     别让人以为选了这条就能保留原图结构 */
+  name: "HiDream O1 参考图（引导弱）",
+  caps: ["i2i"],
+  alpha: "none",
+  steps: 28,
+  cfg: 1,
+  denoise: 1,
+  roles: { prompt: "4", input: "6", output: "13" },
+  workflow: JSON.stringify({
+    "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "hidream_o1_image_dev_fp8_scaled.safetensors" }, _meta: { title: "CHECKPOINT" } },
+    "2": { class_type: "ModelNoiseScale", inputs: { model: ["1", 0], noise_scale: 7.6 } },
+    "3": { class_type: "BasicScheduler", inputs: { model: ["2", 0], scheduler: "normal", steps: 28, denoise: 1 } },
+    "4": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["1", 1] }, _meta: { title: "PROMPT" } },
+    "5": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["1", 1] }, _meta: { title: "NEGATIVE" } },
+    "6": { class_type: "LoadImage", inputs: { image: "" }, _meta: { title: "INPUT" } },
+    "7": { class_type: "HiDreamO1ReferenceImages", inputs: { positive: ["4", 0], negative: ["5", 0], "images.image_1": ["6", 0] } },
+    /* latent 直接取参考图尺寸，输出不会改 PS 里的图层大小（这里的 width/height 是链接，comfyApplySize 不会去改） */
+    "9": { class_type: "GetImageSize", inputs: { image: ["6", 0] } },
+    "8": { class_type: "EmptyHiDreamO1LatentImage", inputs: { width: ["9", 0], height: ["9", 1], batch_size: 1 } },
+    "10": { class_type: "SamplerLCM", inputs: { s_noise: 1, s_noise_end: 1, noise_clip_std: 2.5 } },
+    "11": { class_type: "SamplerCustom", inputs: { model: ["2", 0], add_noise: true, noise_seed: 42, cfg: 1, positive: ["7", 0], negative: ["7", 1], sampler: ["10", 0], sigmas: ["3", 0], latent_image: ["8", 0] }, _meta: { title: "SAMPLER" } },
+    "12": { class_type: "VAEDecode", inputs: { samples: ["11", 0], vae: ["1", 2] }, _meta: { title: "DECODE" } },
+    "13": { class_type: "SaveImage", inputs: { images: ["12", 0], filename_prefix: "psspark_hidream_ref" }, _meta: { title: "OUTPUT" } }
+  })
+}, {
   /* 通用兜底：不含具体模型名（ckpt_name 留空）。「适配本机模型」或运行时
    * 会自动挑本机任意一个 checkpoint，所以换机器、换 checkpoint 不必重新导工作流。
    * 适合 SD1.5 / SDXL / Pony 这类「单文件 checkpoint 一把梭」的模型。 */
@@ -456,7 +695,7 @@ const COMFY_TEMPLATES = [{
 function comfyPresetUrls(p) {
   const out = [];
   const push = function (u) {
-    const s = String(u || "").trim().replace(/\/+$/, "");
+    const s = comfyNormalizeUrl(u);
     if (s && out.indexOf(s) < 0) out.push(s);
   };
   if (p) { push(p.url); (p.urls || []).forEach(push); }
@@ -504,8 +743,8 @@ function comfyNormPreset(p) {
   const out = {
     id: String(src.id || base.id),
     name: String(src.name || base.name),
-    url: String(src.url || DEFAULT_COMFY.url),
-    urls: Array.isArray(src.urls) ? src.urls.map(function (u) { return String(u || "").trim(); }).filter(Boolean) : [],
+    url: comfyNormalizeUrl(src.url || DEFAULT_COMFY.url),
+    urls: Array.isArray(src.urls) ? src.urls.map(comfyNormalizeUrl).filter(Boolean) : [],
     workflow: String(src.workflow || ""),
     roles: {},
     overrides: {},
@@ -548,12 +787,17 @@ function comfyWorkflowModelSig(p) {
   const names = [];
   Object.keys(wf || {}).forEach(function (id) {
     const inp = (wf[id] && wf[id].inputs) || {};
-    ["unet_name", "ckpt_name", "lora_name"].forEach(function (k) {
-      if (typeof inp[k] === "string" && inp[k]) names.push(inp[k]);
+    /* 只看「底座模型」：unet / ckpt。
+     * 之前把 lora_name 也算进签名，同一个模型的不同用途工作流会因为挂不挂 LoRA
+     * 被拆成两个模型组（MOSS-Image 文生图 / MOSS-Image 指令编辑 → 选「MOSS-Image」
+     * 跑相似图就报「没有可用于当前功能的本地工作流」）。LoRA 是用途差异，不是模型差异。 */
+    ["unet_name", "ckpt_name"].forEach(function (k) {
+      if (typeof inp[k] !== "string" || !inp[k]) return;
+      const v = comfyNormModelPath(inp[k]);   /* 反斜杠/前缀归一，Windows 上同一模型才不会拆成两组 */
+      if (v) names.push(v);
     });
   });
-  /* 归一后再排序：Windows 上来回混用 \ 与 / 会把同一个模型拆成两个下拉项 */
-  return names.length ? names.map(comfyNormModelPath).sort().join("|") : "";
+  return names.length ? Array.from(new Set(names)).sort().join("|") : "";
 }
 
 /* ===== 本机模型适配 =====
@@ -702,7 +946,6 @@ function comfyAdaptWorkflow(workflow, probe) {
     missingFiles: missingFiles
   };
 }
-
 
 function comfyModelKey(p) {
   return comfyWorkflowModelSig(p) || comfyBaseName(p && p.name) || String((p && p.id) || "");
@@ -1078,12 +1321,12 @@ function defaultModelFor(use) {
 
 function defaultGenModel() { return defaultModelFor("gen"); }
 
-/* ---------------- 图像模型 / 尺寸 / 质量选项 ----------------
+/* ---------------- 图像模型 / 尺寸 / 质量选项（依据 PS Spark API 文档 2026-09 版） ----------------
  * 尺寸与质量的可选值随所选模型变化（不同模型支持范围不同），
  * 由 sizeOptionsForModel / qualityOptionsForModel 统一提供，UI 与请求层共用。 */
 
 /* 平台图像模型预设
- * 来源：服务商公开测试页的模型清单与尺寸映射表（含 nano-banana-2.1）。
+ * 来源：PS Spark 官方测试页 image.psspark.ai 的模型清单与尺寸映射表（比接口文档更全，含 nano-banana-2.1）。
  * group: gpt / nano（下拉分组标题）；sizeKind 决定尺寸表；imageSize 为该模型可选分辨率（[] = 无该控件）。
  * 视频模型（minimax-h3 等）不在本插件范围，不纳入。 */
 const IMAGE_MODEL_PRESETS = [
@@ -1091,9 +1334,10 @@ const IMAGE_MODEL_PRESETS = [
   { id: "gpt-image-2", label: "gpt-image-2（基础 · 比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
   { id: "gpt-image-2-vip", label: "gpt-image-2-vip（1–4K · 支持透明）", group: "gpt", sizeKind: "pixel14k", imageSize: [] },
   { id: "gpt-image-2.5", label: "gpt-image-2.5（比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
-  { id: "gpt-image-2.6", label: "gpt-image-2.6（默认 · 比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
   { id: "gpt-image-2.5-flare", label: "gpt-image-2.5-flare（1–4K · 支持透明）", group: "gpt", sizeKind: "pixel14k", imageSize: [] },
   { id: "gpt-image-2.5-sunburst", label: "gpt-image-2.5-sunburst（1–4K · 最高质量）", group: "gpt", sizeKind: "pixel14k", imageSize: [] },
+  /* 2.6：同一端点同一套参数（model/prompt/images/aspectRatio/quality），尺寸按比例 1K 像素值 */
+  { id: "gpt-image-2.6", label: "gpt-image-2.6（默认 · 最新 · 比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
   /* —— nano-banana 系列（比例出图，走统一端点 /v1/api/generate） —— */
   { id: "nano-banana-fast", label: "nano-banana-fast（快速 · 仅比例）", group: "nano", sizeKind: "ratio", imageSize: [] },
   { id: "nano-banana-pro", label: "nano-banana-pro（分辨率 1–4K 可选）", group: "nano", sizeKind: "ratio", imageSize: ["1K", "2K", "4K"] },
@@ -1108,7 +1352,7 @@ const IMAGE_MODEL_PRESETS = [
   { id: "nano-banana-2-4k-cl", label: "nano-banana-2-4k-cl（4K · 含极端比例）", group: "nano", sizeKind: "ratioExt", imageSize: ["4K"] }
 ];
 
-/* 尺寸选项①：gpt-image-2 / 2.5 / 2.6 —— 支持比例出图（按 1K 像素值发送） */
+/* 尺寸选项①：gpt-image-2 / gpt-image-2.5 —— 支持比例出图（按 1K 像素值发送） */
 const SIZE_RATIO_1K = [
   ["auto", "auto（自动）"],
   ["1024x1024", "1:1 · 1024×1024"],
@@ -1290,7 +1534,7 @@ function normalizeQualityForModel(model, quality) {
 /* ---------------- 模型画布上限（最大边长 / 最大长宽比） ----------------
  * 由尺寸表推导，而不是另写一份硬编码：表里出现过的最大边就是该模型能出的最大像素，
  * 表里的最长条就是它能接受的最极端比例。
- *   gpt-image-2 / 2.5 / 2.6（比例 1K）  → 1920px / 21:9 ≈ 2.33
+ *   gpt-image-2 / 2.5（比例 1K）        → 1920px / 21:9 ≈ 2.33
  *   gpt-image-2-vip / flare / sunburst → 3840px / 3:1
  *   nano-banana 系列（比例出图）        → 由 imageSize 决定（1K/2K/4K），比例 16:9
  *   nano-banana-2 / 2.1（ratioExt）    → 同上，比例可到 8:1

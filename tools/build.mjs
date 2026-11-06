@@ -27,6 +27,35 @@ const DIST = path.join(ROOT, "dist");
 const ENTRIES = ["index.html", "manifest.json", "js", "icons"];
 const FORBIDDEN = ["DEV:BEGIN", "DEV:END", "DevMode", "psspark.dev.", "devWorkbench", "开发者工作台", "js/dev/", "__DEFAULT_LANG__"];
 
+/* 插件 id = 存储隔离键：UXP 的 localStorage / secureStorage / 侧载目录都按 id 分家，
+ * 改一次就等于所有 Key、预设、历史都读不回来。Windows 包曾把 id 手改成
+ * com.psspark.ps.spark，和 macOS 包不一致，升级后用户要重填一遍配置。
+ * 所以这里把它做成构建期硬校验：id 不对、版本对不上、或源码里残留旧 id，都直接失败。 */
+const PLUGIN_ID = "com.psspark.ps.assistant";
+const ID_ALIASES = ["com.psspark.ps.spark", "com.grsai.ps.assistant"];
+
+async function verifyIdentity() {
+  const manifest = JSON.parse(await readFile(path.join(SRC, "manifest.json"), "utf8"));
+  if (manifest.id !== PLUGIN_ID) {
+    throw new Error("manifest.id 必须是 " + PLUGIN_ID + "，当前是 " + manifest.id);
+  }
+  const brand = await readFile(path.join(SRC, "js", "brand.js"), "utf8");
+  const brandVer = (brand.match(/version:\s*"([^"]+)"/) || [])[1];
+  if (brandVer && brandVer !== manifest.version) {
+    throw new Error("版本不一致：manifest=" + manifest.version + " · brand.js=" + brandVer);
+  }
+  const bad = [];
+  for (const f of await walk(SRC)) {
+    if (!/\.(html|js|json|css|txt)$/i.test(f)) continue;
+    const s = await readFile(f, "utf8");
+    for (const alias of ID_ALIASES) {
+      if (s.indexOf(alias) >= 0) bad.push(path.relative(ROOT, f) + " 含旧 id「" + alias + "」");
+    }
+  }
+  if (bad.length) throw new Error("插件 id 校验失败：\n  " + bad.join("\n  "));
+  return manifest;
+}
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 2; i < argv.length; i++) {
@@ -150,10 +179,9 @@ async function main() {
   const outDir = path.join(outRoot, ARTIFACT);
   const suffix = isDev ? "-dev" : "";
 
-  const manifest = JSON.parse(await readFile(path.join(SRC, "manifest.json"), "utf8"));
+  const manifest = await verifyIdentity();
   const label = isOss ? "oss" : channel;
-  console.log(`打包 ${manifest.name} v${manifest.version} · ${label}（${process.platform}）· 默认语言 ${lang}`);
-
+  console.log(`打包 ${manifest.name} v${manifest.version} · ${label}（${process.platform}）· 默认语言 ${lang} · id ${manifest.id}`);
   await stage(outDir, isDev);
 
   /* AGPL 合规：分发产物里必须带许可证与第三方声明 */
@@ -162,6 +190,15 @@ async function main() {
     if (existsSync(src)) await copyFile(src, path.join(outDir, f));
   }
   await processOutput(outDir, isDev, lang);
+
+  /* 产物自检：装到 PS 里的是哪个 id，就看这一行 */
+  const outManifest = JSON.parse(await readFile(path.join(outDir, "manifest.json"), "utf8"));
+  if (outManifest.id !== PLUGIN_ID) {
+    throw new Error("产物 manifest.id 不是 " + PLUGIN_ID + "：" + outManifest.id);
+  }
+  if (outManifest.version !== manifest.version) {
+    throw new Error("产物版本与源码不一致：" + outManifest.version + " ≠ " + manifest.version);
+  }
 
   if (!isDev) {
     const count = await verifyRelease(outDir);

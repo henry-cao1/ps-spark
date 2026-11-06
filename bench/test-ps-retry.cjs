@@ -178,18 +178,20 @@ const UNAVAIL_FEATHER = 'ERR:命令"羽化"当前不可用';
     (await w.eval("expandLimitWarning('gpt-image-2', 2000, 2000, 500, 500, 500, 500)")).indexOf("超过该模型上限 1920px") >= 0,
     "");
 
-  /* ---- 9) 拆图纯色底探测（四角同色才去抠） ---- */
-  const solid = new Uint8Array(64 * 64 * 4);
-  for (let i = 0; i < 64 * 64; i++) {
+  /* ---- 9) 拆图纯色底探测（边框同色才去抠；探测按 128×128 取样） ---- */
+  const PN = 128;
+  const solid = new Uint8Array(PN * PN * 4);
+  for (let i = 0; i < PN * PN; i++) {
     solid[i * 4] = 255; solid[i * 4 + 1] = 0; solid[i * 4 + 2] = 255; solid[i * 4 + 3] = 255;
   }
-  const busy = new Uint8Array(64 * 64 * 4);
-  for (let y = 0; y < 64; y++) {
-    for (let x = 0; x < 64; x++) {
-      const i = (y * 64 + x) * 4;
-      const corner = (x < 8 || x > 55) && (y < 8 || y > 55);
-      if (corner) { busy[i] = (x * 4) % 255; busy[i + 1] = (y * 4) % 255; busy[i + 2] = 128 - (x % 100); }
-      else { busy[i] = 20; busy[i + 1] = 40; busy[i + 2] = 60; }
+  const busy = new Uint8Array(PN * PN * 4);
+  for (let y = 0; y < PN; y++) {
+    for (let x = 0; x < PN; x++) {
+      const i = (y * PN + x) * 4;
+      const edge = (x < 8 || x >= PN - 8 || y < 8 || y >= PN - 8);
+      if (edge) {
+        busy[i] = (x * 7) % 255; busy[i + 1] = (y * 7) % 255; busy[i + 2] = (x * 3 + y * 5) % 255;
+      } else { busy[i] = 20; busy[i + 1] = 40; busy[i + 2] = 60; }
       busy[i + 3] = 255;
     }
   }

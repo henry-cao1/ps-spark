@@ -20,13 +20,18 @@ function isCmdUnavailable(e) {
 const BP_WAITS = [0, 140, 320];
 async function batchPlay(descs) {
   let last = null;
+  /* 命令名一起记：PS 的「未知的命令 / 命令当前不可用」只给原因不给命令名，
+   * 没有这一行就只能靠猜是哪条 batchPlay 出的问题（P0「未知命令不可用」一直定不了位）。 */
+  const names = (descs || []).map(function (d) { return (d && d._obj) || "?"; }).join("+");
   for (let i = 0; i < BP_WAITS.length; i++) {
     if (BP_WAITS[i]) await new Promise(function (r) { setTimeout(r, BP_WAITS[i]); });
     try { return await action.batchPlay(descs, BP_OPTS); }
     catch (e) {
       last = e;
+      const msg = String((e && e.message) || e);
+      diag("batchPlay[" + names + "] 第 " + (i + 1) + "/" + BP_WAITS.length + " 次失败: " + msg);
       if (!isCmdUnavailable(e) || i === BP_WAITS.length - 1) throw e;
-      diag("batchPlay: 命令暂不可用，稍后重试（" + String((e && e.message) || e) + "）");
+      diag("batchPlay: 命令暂不可用，稍后重试（" + names + "）");
     }
   }
   throw last;
@@ -229,66 +234,247 @@ async function loadSelectionFromChannel(name) {
   await batchPlay([{ _obj: "set", _target: [{ _ref: "channel", _property: "selection" }], to: { _ref: "channel", _name: name } }]);
 }
 
+/* 魔棒点一下取底色。contiguous 显式写出：省略时 PS 会用「上次工具状态」，
+ * 不同机器结果不一致。 */
+async function magicWandSelectAt(x, y, tol) {
+  await batchPlay([{
+    _obj: "magicWand",
+    _target: [{ _ref: "channel", _property: "selection" }],
+    tolerance: tol,
+    antiAlias: true,
+    contiguous: true,
+    sampleMerged: false,
+    /* clickPoint 的 horizontal/vertical 是「坐标对象」，必须带 _unit/_value。
+     * 直接写裸数字时 PS 会按 0 处理（点不到目标像素），于是魔棒「静默选不中」——
+     * 这正是日志里四个角全部「未选中任何区域」的原因，不是魔棒不可用。 */
+    clickPoint: {
+      _obj: "point",
+      horizontal: { _unit: "pixelsUnit", _value: x },
+      vertical: { _unit: "pixelsUnit", _value: y }
+    },
+    _options: { dialogOptions: "dontDisplay" }
+  }]);
+  /* 返回值不给选区状态：调用方用 selectionNonEmpty() 自行确认 */
+}
+
+/* 像素级去底（魔棒的兜底）：
+ * 直接读结果层像素，把「接近底色」的像素 alpha 写成 0，再整块写回图层。
+ * 为什么需要它：Win + PS 27.9.1 实测，纯洋红底（四角 #FB05FA）上魔棒会静默不生效
+ * （不报错、选不出任何区域），于是反选建蒙版全部跳过，元素层整幅不透明 ——
+ * 用户看到的就是「拆图没置入 / 扣色失败」。像素运算不依赖任何选区命令，必定生效。
+ * 底色即使不是洋红（模型给了纯白/纯绿底）也能用，取色由探测结果传入。
+ * 必须在 executeAsModal 内调用。 */
+async function cutLayerAlphaByKeyPixels(docId, layerId, keyRgb, tol) {
+  const key = (keyRgb && keyRgb.length >= 3) ? [keyRgb[0], keyRgb[1], keyRgb[2]] : [255, 0, 255];
+  const t = Math.max(8, Math.min(90, tol == null ? 26 : tol));
+  /* 背景层写不进 alpha（会被静默丢掉）→ 先转成普通层，否则后面全是白忙 */
+  await ensureAlphaLayer(docId, layerId);
+  try {
+    /* 统一自适应读法：原尺寸读，且保证拿到独立的 alpha（4 通道） */
+    const gp = await getPixelsRGBA(docId, layerId);
+    if (!gp) throw new Error("getPixels 没有返回 imageData");
+    const raw = gp.data;
+    const w = gp.w, h = gp.h;
+    const px = w * h;
+    if (!w || !h || !raw || !raw.length) throw new Error("图层像素为空（" + w + "×" + h + "）");
+    if (px > 40e6) throw new Error("像素太多（" + w + "×" + h + "），跳过像素级去底");
+    const comps = gp.comps;
+    if (comps < 4) diag("colorKey: 读到的像素只有 " + comps + " 通道（图层当前完全不透明），抠完会重新声明 alpha");
+
+    const out = new Uint8Array(px * 4);
+    let cutN = 0, keepN = 0;
+    const halo = [];
+    const isKey = makeKeyTest(key, t);
+    for (let i = 0; i < px; i++) {
+      const s = i * comps, d = i * 4;
+      const r = raw[s], g = raw[s + 1], b = raw[s + 2];
+      out[d] = r; out[d + 1] = g; out[d + 2] = b;
+      if (isKey(r, g, b)) {
+        out[d + 3] = 0;
+        cutN++;
+      } else {
+        out[d + 3] = comps >= 4 ? raw[s + 3] : 255;
+        if (out[d + 3] > 0) {
+          keepN++;
+          /* 落在容差外、但明显还是「洋红族」的像素 = 渐变底留下的毛边候选。
+           * 只登记不清除：万一洋红本来就是元素的一部分（粉色主体），清掉就毁了元素。 */
+          if (r > 140 && b > 140 && g < Math.min(r, b) - 80 && Math.abs(r - b) < 70) halo.push(i);
+        }
+      }
+    }
+    /* 毛边清理：占比很小（< 5% 的保留像素）才动手 —— 这时它只能是底色渐变，不可能是元素 */
+    let haloN = 0;
+    if (halo.length && halo.length < keepN * 0.05) {
+      for (let k = 0; k < halo.length; k++) out[halo[k] * 4 + 3] = 0;
+      haloN = halo.length;
+      keepN -= haloN;
+    }
+    /* 命中率异常 = 取色不对（模型根本没给纯色底）。宁可不抠，也不能把图层写坏。
+     * 正常拆图：底色占画面大多数，元素占少数，两边都不会接近 0。 */
+    if (cutN / px < 0.01 || keepN / px < 0.01) {
+      diag("colorKey: 像素级去底的命中异常（底色 " + cutN + "/" + px + "，保留 " + keepN + "/" + px + "），放弃");
+      return false;
+    }
+
+    /* 色板必须跟源图层一致：getPixels 是「同色彩空间」读回来的，profile 就是文档 profile；
+     * 漏传会让 PS 按 sRGB 解释，非 sRGB 文档写回去会整层偏色。 */
+    const optImg = { width: w, height: h, components: 4, componentSize: 8, colorSpace: "RGB" };
+    if (gp.profile) optImg.colorProfile = gp.profile;
+    /* 必须传 TypedArray 本身：传 ArrayBuffer 会抛
+     * 「Incorrect type for image data argument. Possible types are Uint8Array, Uint16Array, Float32Array」 */
+    const imgData = await imaging.createImageDataFromBuffer(out, optImg);
+    /* targetBounds 是 Bounds 类型，必须给全 left/top/right/bottom。
+     * 只给 left/top 时 right/bottom 缺失，PS 不报错但写入区域无效 —— 像素一点没变，
+     * 用户看到的就是「日志说抠掉 64%、画面上还是整幅洋红」。 */
+    const bl = gp.left || 0, bt = gp.top || 0;
+    await imaging.putPixels({
+      documentID: (typeof numOf === "function" ? numOf(docId) : Number(docId)),
+      layerID: (typeof numOf === "function" ? numOf(layerId) : Number(layerId)),
+      imageData: imgData,
+      replace: true,
+      targetBounds: { left: bl, top: bt, right: bl + w, bottom: bt + h },
+      commandName: "PS Spark: 拆图抠色"
+    });
+    try { if (imgData.dispose) imgData.dispose(); } catch (eD1) { /* ignore */ }
+    const hex = "#" + key.map(function (v) {
+      const s = Math.max(0, Math.min(255, Math.round(v))).toString(16).toUpperCase();
+      return s.length < 2 ? "0" + s : s;
+    }).join("");
+    /* 写完自检：putPixels 不抛错不等于 alpha 落进了图层（背景层会静默丢弃）。
+     * 以前这里直接 return true，日志显示「抠掉 64% · 纯色底抠图」，画面上却整幅不透明，
+     * 后面重建再判「没有元素轮廓」——三层日志互相矛盾，实际一步都没生效。 */
+    const chk = await layerAlphaStats(docId, layerId, 64);
+    const opaque = chk ? chk.ratio : 1;
+    /* 独立佐证：alpha 写成功后图层范围会收缩到元素大小（透明像素不计入 bounds）。
+     * 万一读取语义在某台机器上又变了，这行日志能直接区分「没写进去」和「读不出来」。 */
+    let bbTxt = "?";
+    try {
+      const bb = await layerBoundsPx(docId, layerId);
+      if (bb) bbTxt = bb.w + "×" + bb.h + " @ " + bb.left + "," + bb.top +
+        (bb.w < w - 2 || bb.h < h - 2 ? " · 已收缩" : " · 仍是全幅");
+    } catch (eB) { /* ignore */ }
+    if (opaque > 0.99) {
+      diag("colorKey: 像素级去底已执行，但图层仍不透明（覆盖率 " + (opaque * 100).toFixed(1) +
+        "%）→ 图层装不下 alpha（背景层/已压平），改用魔棒建蒙版；抠后范围 " + bbTxt);
+      return false;
+    }
+    diag("colorKey: 像素级去底完成（" + w + "×" + h + "，底色 " + hex + "，容差 " + t +
+      "，抠掉 " + Math.round(cutN / px * 100) + "%，图层保留 " + (opaque * 100).toFixed(1) +
+      "%，通道 " + comps + "，清毛边 " + haloN + "，抠后范围 " + bbTxt + "）");
+    return true;
+  } catch (e) {
+    diag("colorKey: 像素级去底失败 " + ((e && e.message) || String(e)));
+    return false;
+  }
+}
+
 /*
  * 纯色底抠图（不支持透明通道的模型用）：
- * 魔棒点左上角取底色 → 反选 → 建图层蒙版。
- * 结果层保留像素，蒙版可再编辑；失败只报错，不改动文档内容。
+ * ① 首选：魔棒点底色角 → 反选 → 建图层蒙版（非破坏性，蒙版可再编辑）；
+ * ② 兜底：魔棒一个区域都没选中（本机实测常态）→ 像素级去底，直接写 alpha。
+ * 失败只报错，不改动文档内容。
+ * opts: { docId, layerId, keyRgb, tolerance, points } —— docId/layerId 用来把魔棒
+ * 对准「刚写入的结果层」（多文档/并发写入后活动层未必是它，打空就会误判抠色失败）。
  */
 async function cutLayerByColorKey(opts) {
   const o = opts || {};
   const tol = Math.max(0, Math.min(100, o.tolerance == null ? 24 : o.tolerance));
-  const x = o.x == null ? 1 : o.x;
-  const y = o.y == null ? 1 : o.y;
+  /* 先把目标文档切回前台、把结果层选准；否则魔棒取样的是别的图层 */
+  if (o.docId != null) {
+    try { ensureActiveDoc(o.docId); } catch (e0) { /* ignore */ }
+  }
+  if (o.layerId != null) {
+    const dd = docById(o.docId) || app.activeDocument;
+    if (dd && !(await selectLayerById(dd, o.layerId))) {
+      diag("colorKey: 未能选中结果层 id=" + o.layerId + "（继续按当前活动层试）");
+    }
+    /* 背景层既不能加蒙版也装不下 alpha：魔棒/像素两条路都会"成功"但画面没变化 */
+    if (dd) await ensureAlphaLayer(dd.id, o.layerId);
+  }
+
+  /* —— 首选：像素级去底。
+   * Win + PS 27.9.1 实测魔棒在纯色底上会静默打空（四角全空，不报错也不选区），
+   * 走魔棒只是白等 4 次点击再回退。像素运算不依赖任何选区命令，必定生效，
+   * 因此默认先走它；像素级命中异常（比如模型压根没用纯色底）再回退魔棒。 */
+  if (o.docId != null && o.layerId != null) {
+    const okPixFirst = await cutLayerAlphaByKeyPixels(o.docId, o.layerId, o.keyRgb, Math.max(24, tol));
+    if (okPixFirst) {
+      try { await deselect(); } catch (ePF) { /* ignore */ }
+      diag("colorKey: 抠底色完成（像素级，容差 " + Math.max(24, tol) + "）");
+      return true;
+    }
+    diag("colorKey: 像素级去底未成功，改用魔棒");
+  }
+
+  let docW = 0, docH = 0;
   try {
-    await batchPlay([{
-      _obj: "magicWand",
-      _target: [{ _ref: "channel", _property: "selection" }],
-      tolerance: tol,
-      antiAlias: true,
-      sampleMerged: false,
-      clickPoint: { _obj: "point", horizontal: x, vertical: y }
-    }]);
-    /* 点到透明区/纯色整幅时魔棒选不出东西：此时反选=全选，建蒙版等于没抠，
-     * 还会因选区为空触发「建立不可用」。直接判定失败、保留生成层。 */
-    if (!(await selectionNonEmpty())) {
-      diag("colorKey: 魔棒未选中任何区域（点 (" + x + "," + y + ")），跳过抠色");
-      try { await deselect(); } catch (e0) { /* ignore */ }
+    const ad = docById(o.docId) || app.activeDocument;
+    docW = Math.round(ad.width); docH = Math.round(ad.height);
+  } catch (eDim) { /* ignore */ }
+  /* 取样点：四角各点一次。模型重新构图时某个角可能不是底色，多试几个点更稳。 */
+  let pts = (o.points && o.points.length) ? o.points : [{ x: 1, y: 1 }];
+  if (!(o.points && o.points.length) && docW > 4 && docH > 4) {
+    pts.push({ x: docW - 2, y: 1 }, { x: 1, y: docH - 2 }, { x: docW - 2, y: docH - 2 });
+  }
+
+  let wandOk = false;
+  for (let i = 0; i < pts.length; i++) {
+    try {
+      await magicWandSelectAt(pts[i].x, pts[i].y, tol);
+    } catch (eW) {
+      diag("colorKey: 魔棒执行失败（点 " + pts[i].x + "," + pts[i].y + "） " + ((eW && eW.message) || String(eW)));
+      continue;
+    }
+    if (await selectionNonEmpty()) {
+      wandOk = true;
+      diag("colorKey: 魔棒在 (" + pts[i].x + "," + pts[i].y + ") 选中底色");
+      break;
+    }
+    diag("colorKey: 魔棒在 (" + pts[i].x + "," + pts[i].y + ") 未选中任何区域");
+    try { await deselect(); } catch (eD) { /* ignore */ }
+  }
+
+  if (wandOk) {
+    try {
+      await batchPlay([{ _obj: "inverse" }]);
+      const okMask = await applySelectionAsLayerMask();
+      try { await deselect(); } catch (e2) { /* ignore */ }
+      diag("colorKey: 抠底色完成（容差 " + tol + "，蒙版=" + okMask + "）");
+
+      /* 蒙版建出来但全黑 = 一个元素像素都没抠到，图层会整体不可见（用户以为没生成）。
+       * 这时删掉蒙版，保留模型原样，比留一个"看不见的层"可操作得多。 */
+      if (okMask) {
+        let maskEmpty = false;
+        try {
+          await selectLayerMaskChannel();
+          maskEmpty = !(await selectionNonEmpty());
+        } catch (eChk) { maskEmpty = false; }
+        try { await deselect(); } catch (eChk2) { /* ignore */ }
+        if (maskEmpty) {
+          diag("colorKey: 蒙版全黑（未命中元素），删除蒙版、保留模型原图");
+          try {
+            await batchPlay([{
+              _obj: "delete",
+              _target: [{ _ref: "channel", _enum: "channel", _value: "mask" }],
+              _options: { dialogOptions: "dontDisplay" }
+            }]);
+          } catch (eDelMask) {
+            diag("colorKey: 删除空蒙版失败 " + ((eDelMask && eDelMask.message) || String(eDelMask)));
+          }
+          return false;
+        }
+      }
+      return true;
+    } catch (e) {
+      diag("colorKey: 失败 " + ((e && e.message) || String(e)));
+      try { await deselect(); } catch (e3) { /* ignore */ }
       return false;
     }
-    await batchPlay([{ _obj: "inverse" }]);
-    const okMask = await applySelectionAsLayerMask();
-    try { await deselect(); } catch (e2) { /* ignore */ }
-    diag("colorKey: 抠底色完成（容差 " + tol + "，蒙版=" + okMask + "）");
-
-    /* 蒙版建出来但全黑 = 一个元素像素都没抠到，图层会整体不可见（用户以为没生成）。
-     * 这时删掉蒙版，保留模型原样，比留一个"看不见的层"可操作得多。 */
-    if (okMask) {
-      let maskEmpty = false;
-      try {
-        await selectLayerMaskChannel();
-        maskEmpty = !(await selectionNonEmpty());
-      } catch (eChk) { maskEmpty = false; }
-      try { await deselect(); } catch (eChk2) { /* ignore */ }
-      if (maskEmpty) {
-        diag("colorKey: 蒙版全黑（未命中元素），删除蒙版、保留模型原图");
-        try {
-          await batchPlay([{
-            _obj: "delete",
-            _target: [{ _ref: "channel", _enum: "channel", _value: "mask" }],
-            _options: { dialogOptions: "dontDisplay" }
-          }]);
-        } catch (eDelMask) {
-          diag("colorKey: 删除空蒙版失败 " + ((eDelMask && eDelMask.message) || String(eDelMask)));
-        }
-        return false;
-      }
-    }
-    return true;
-  } catch (e) {
-    diag("colorKey: 失败 " + ((e && e.message) || String(e)));
-    try { await deselect(); } catch (e3) { /* ignore */ }
-    return false;
   }
+
+  /* 走到这里说明像素级与魔棒都没抠成 */
+  diag("colorKey: 失败（像素级与魔棒都没成功）");
+  return false;
 }
 
 /*
@@ -298,44 +484,97 @@ async function cutLayerByColorKey(opts) {
  *  - 否则 → 模型没照做纯色底（nano 系列常"重新构图"），魔棒必然点不中，提前判定失败。
  * 返回 null 表示读不到像素（按原逻辑继续试魔棒）。必须在 executeAsModal 内调用。
  */
+/* 底色判定器：绝对距离 + 归一化色相，两条命中任一条即可。
+ *
+ * 为什么需要两条：
+ *   · 绝对距离（逐通道差 <= tol）适合「平的纯色底」，但模型常画 16% 左右的暗角/渐变：
+ *     边缘 (212,5,209) 与中心 (252,6,249) 差 40 —— 容差 26 时只有一圈被抠掉，中间还是洋红。
+ *   · 归一化 RGB 对「整体明暗缩放」严格不变（除以自身和，缩放因子被约掉），
+ *     中心与边缘归一化后是同一个颜色，能把渐变底整片抠干净。
+ *   · 只靠归一化会把白底上的灰阶元素一起抠掉 —— 所以两条取「或」，
+ *     并给归一化加两个保底：不比底色暗太多（>45%）、不是近黑像素（防除零放大噪声）。
+ */
+function makeKeyTest(key, tol) {
+  const k = [key[0], key[1], key[2]];
+  const kmax = Math.max(k[0], k[1], k[2]);
+  const sKey = k[0] + k[1] + k[2];
+  const kn = sKey >= 12 ? [k[0] / sKey, k[1] / sKey, k[2] / sKey] : null;
+  const tolN = Math.max(0.045, Math.min(0.16, tol / 255 * 1.2));
+  return function (r, g, b) {
+    if (Math.abs(r - k[0]) <= tol && Math.abs(g - k[1]) <= tol && Math.abs(b - k[2]) <= tol) return true;
+    if (!kn) return false;
+    if (Math.max(r, g, b) < kmax * 0.45) return false;
+    const s = r + g + b;
+    if (s < 12) return false;
+    return Math.abs(r / s - kn[0]) <= tolN &&
+           Math.abs(g / s - kn[1]) <= tolN &&
+           Math.abs(b / s - kn[2]) <= tolN;
+  };
+}
+
+/* 探测「纯色底」并给出可用的底色。
+ *
+ * 旧实现：四角各取 8×8 小方块 → 求均值 + 最大单通道偏差，偏差 > 24 判「不是纯色底」。
+ * 实测两个毛病（2026-11-04 00:29 日志）：
+ *   ① 模型画的是「带暗角/渐变的洋红底」，边缘偏差 34（#FC06F9）→ 直接判不是纯色底
+ *      → 整条抠色被跳过 → 元素层没有 alpha → 对位/重建全部跳过
+ *      → 用户看到的就是「最大摆放 + 背景颜色还在」；
+ *   ② 均值会被少量离群点拽偏，抠色用的底色也跟着偏，抠完留一圈洋红毛边。
+ * 现在：整圈边框取样（避开元素主体）→ 逐通道中位数当底色 → 90 分位偏差描述噪声
+ *      → 允许 15% 离群。中位数对离群点不敏感，底色更准，容差按实测噪声放大。
+ */
 async function decompProbeKeyBg(docId, layerId) {
   try {
+    const N = 128;
     const px = await readPixelsCompat({
       documentID: docId,
       layerID: layerId,
-      targetSize: { width: 64, height: 64 },
+      targetSize: { width: N, height: N },
       componentSize: 8,
       colorSpace: "RGB",
       applyAlpha: false
     });
-    const ch = px.length >= 64 * 64 * 4 ? 4 : 3;
-    const at = function (x, y) { const i = (y * 64 + x) * ch; return [px[i], px[i + 1], px[i + 2]]; };
-    const corners = [];
-    for (let dy = 0; dy < 8; dy++) {
-      for (let dx = 0; dx < 8; dx++) {
-        corners.push(at(dx, dy), at(63 - dx, dy), at(dx, 63 - dy), at(63 - dx, 63 - dy));
+    if (!px || !px.length) return null;
+    const ch = px.length >= N * N * 4 ? 4 : 3;
+    const band = Math.max(2, Math.round(N * 0.05));
+    const at = function (x, y) { const i = (y * N + x) * ch; return [px[i], px[i + 1], px[i + 2]]; };
+    /* 只取最外一圈：元素在中间，边框一定是底色。
+     * 不用「四角小方块」——模型常在角上画装饰/暗角，采到的是渐变边缘而不是底色。 */
+    const rs = [], gs2 = [], bs = [], pts = [];
+    for (let y = 0; y < N; y += 2) {
+      for (let x = 0; x < N; x += 2) {
+        if (x >= band && x < N - band && y >= band && y < N - band) continue;
+        const p = at(x, y);
+        pts.push(p); rs.push(p[0]); gs2.push(p[1]); bs.push(p[2]);
       }
     }
-    let r = 0, g = 0, b = 0;
-    for (let i = 0; i < corners.length; i++) { r += corners[i][0]; g += corners[i][1]; b += corners[i][2]; }
-    const n = corners.length || 1;
-    const avg = [r / n, g / n, b / n];
-    let spread = 0;
-    for (let i = 0; i < corners.length; i++) {
-      spread = Math.max(spread,
-        Math.abs(corners[i][0] - avg[0]),
-        Math.abs(corners[i][1] - avg[1]),
-        Math.abs(corners[i][2] - avg[2]));
-    }
-    const rgb = avg.map(function (v) { return Math.round(v); });
+    if (!pts.length) return null;
+    const med = function (arr) {
+      const a = arr.slice().sort(function (m, n) { return m - n; });
+      return a[Math.floor(a.length / 2)];
+    };
+    const rgb = [med(rs), med(gs2), med(bs)];
+    /* 与中位数的单通道最大差 → 取 90 分位（不取最大值：一个角落装饰就能把最大值拉到 200） */
+    const devs = pts.map(function (p) {
+      return Math.max(Math.abs(p[0] - rgb[0]), Math.abs(p[1] - rgb[1]), Math.abs(p[2] - rgb[2]));
+    }).sort(function (m, n) { return m - n; });
+    const p90 = devs[Math.floor(devs.length * 0.9)] || 0;
+    const maxDev = devs[devs.length - 1] || 0;
+    const inlier = devs.filter(function (v) { return v <= 48; }).length / devs.length;
     const hex = "#" + rgb.map(function (v) {
-      const s = Math.max(0, Math.min(255, v)).toString(16).toUpperCase();
+      const s = Math.max(0, Math.min(255, Math.round(v))).toString(16).toUpperCase();
       return s.length < 2 ? "0" + s : s;
     }).join("");
-    const isMagenta = rgb[0] > 170 && rgb[2] > 170 && rgb[1] < 100;
-    diag("decomp probe: 四角 avg=" + hex + " spread=" + Math.round(spread) +
-      (isMagenta ? "（接近洋红）" : "（不是洋红）"));
-    return { ok: spread <= 24, rgb: rgb, hex: hex, spread: Math.round(spread), isMagenta: isMagenta };
+    /* 「像洋红」只看色相，不看偏差大小：底就是洋红，只是带了渐变 */
+    const isMagenta = rgb[0] > 150 && rgb[2] > 150 && rgb[1] < Math.min(rgb[0], rgb[2]) - 60;
+    const ok = inlier >= 0.85;
+    diag("decomp probe: 边框底色 " + hex + "（内点 " + Math.round(inlier * 100) + "%，p90 偏差 " +
+      Math.round(p90) + "，最大 " + Math.round(maxDev) + "，" + (isMagenta ? "洋红" : "非洋红") +
+      "）→ " + (ok ? "按纯色底抠" : "底色不统一"));
+    return {
+      ok: ok, rgb: rgb, hex: hex, spread: Math.round(p90),
+      maxDev: Math.round(maxDev), inlier: inlier, isMagenta: isMagenta
+    };
   } catch (e) {
     diag("decomp probe: 读像素失败（按原逻辑继续试魔棒） " + ((e && e.message) || String(e)));
     return null;
@@ -343,6 +582,7 @@ async function decompProbeKeyBg(docId, layerId) {
 }
 
 /*
+ * （备用：v3 不再合并图层，此函数暂无调用点）
  * 合并后的元素层会丢掉蒙版（mergeLayers 把蒙版烘焙进像素）。这里按结果层的
  * 透明度重建一个可编辑蒙版：只载入透明选区 → 建蒙版，不羽化。
  * 失败只记日志（层仍可用），整幅不透明的层本来就不该有蒙版。
@@ -912,6 +1152,13 @@ function describeObj(o) {
 }
 
 async function readPixelsCompat(opts) {
+  /* imaging 的 documentID / layerID 必须是 number（传字符串/ID 对象会抛
+   * 「NAPI API failure: Number expected」）。统一在入口归一化，所有读像素的
+   * 调用点（抠色探测、取边色、导出图层）都不再各自处理。 */
+  if (opts && typeof numOf === "function") {
+    if (opts.documentID != null) opts.documentID = numOf(opts.documentID);
+    if (opts.layerID != null) opts.layerID = numOf(opts.layerID);
+  }
   const res = await imaging.getPixels(opts);
   const holders = [];
   if (res && typeof res.getData === "function") holders.push(res);
@@ -1231,6 +1478,199 @@ async function exportScopePngDataURI(scope, maxSide) {
   return uri;
 }
 
+/* ================= 归档缩略图（历史卡片秒开） =================
+ * 历史卡片过去直接读归档原图（平均 1.8MB/张，多候选一条记录 4~5 张），
+ * 打开一次历史页要读 300MB+，base64 后几百 MB 字符串挂在 img.src 上 → 面板卡死数分钟。
+ * 现在归档时另存一张长边 256 的 <name>_thumb.png（约 20KB），卡片只读它。
+ *
+ * ⚠ 铁律：缩略图只从「已经在文档里的图层」取样，绝不为缩略图新建/打开文档。
+ *   getPixels 只认 documentID/layerID，UXP 没有任何从磁盘文件解码 PNG/JPEG 的接口，
+ *   所以上一版走「app.open 临时文档再关掉」——结果打开历史页时 PS 里图片一张张闪过去，
+ *   比直接读原图还慢（用户原话：「点个历史图片就把所有图片重新打开闪过一次」）。
+ *   现在只在两个天然有时机的时刻写：
+ *     ① 任务保存归档时（结果层刚落到画布上）
+ *     ② 从历史/结果卡插入为新图层时（顺手把旧记录的缩略图补上）
+ *   历史页本身不触发任何 Photoshop 操作，打开即完成。
+ * 全程不新建/关闭文档、不增删图层，对用户文档零改动，失败一律返回 null。
+ */
+const THUMB_MAX_SIDE = 256;
+
+/* 从「已存在的图层」取一张缩略图（base64 PNG）。图层必须在当前打开的文档里。 */
+async function layerThumbBase64(docId, layerId, maxSide) {
+  if (layerId == null) throw new Error("缺少图层 id");
+  const doc = ensureActiveDoc(docId);
+  if (!doc) throw new Error("目标文档已关闭");
+  const side = maxSide || THUMB_MAX_SIDE;
+
+  /* 先按图层实际像素范围算等比尺寸（只给一边时 getPixels 也会等比，但拿不到细长图的真实比例） */
+  let target = { width: side };
+  try {
+    const ls = doc.layers || [];
+    let L = null;
+    for (let i = 0; i < ls.length; i++) {
+      if (ls[i] && String(ls[i].id) === String(layerId)) { L = ls[i]; break; }
+    }
+    const b = L ? readLayerPixelBounds(L) : null;
+    if (b) {
+      const bw = b.right - b.left, bh = b.bottom - b.top;
+      if (bw > 0 && bh > 0) {
+        const sc = Math.min(1, side / Math.max(bw, bh));
+        target = { width: Math.max(1, Math.round(bw * sc)), height: Math.max(1, Math.round(bh * sc)) };
+      }
+    }
+  } catch (e) { /* 尺寸读不到就用默认宽度，不中断 */ }
+
+  const res = await imaging.getPixels({
+    documentID: doc.id,
+    layerID: layerId,
+    targetSize: target,
+    componentSize: 8,
+    colorSpace: "RGB",
+    applyAlpha: true
+  });
+  const holder = (res && res.imageData) ? res.imageData : res;
+  if (!holder) throw new Error("getPixels 未返回数据");
+  try {
+    const enc = await imaging.encodeImageData({ imageData: holder, base64: true, colorSpace: "RGB" });
+    if (typeof enc === "string") return enc;
+    if (enc && enc.length) return base64FromBuffer(enc);
+    return "";
+  } finally {
+    try { if (holder.dispose) holder.dispose(); } catch (eD) { /* ignore */ }
+  }
+}
+
+/* 把某图层的缩略图写进任务归档目录（覆盖同名文件）。
+ * docId/layerId 无效、文档已关、图层已删 —— 一律返回 null，调用方照常继续。 */
+async function writeLayerThumb(docId, layerId, destFolder, thumbName) {
+  if (!destFolder || !thumbName || layerId == null) return null;
+  let b64 = "";
+  try {
+    /* getPixels / encodeImageData 必须在模态作用域内（UXP 硬性要求） */
+    b64 = await psModal(async function () {
+      return await layerThumbBase64(docId, layerId);
+    }, "PS Spark: 生成归档缩略图", 2);
+  } catch (e) {
+    diag("thumb: 取样失败 " + thumbName + " -> " + ((e && e.message) || String(e)));
+    return null;
+  }
+  if (!b64) return null;
+  try {
+    const f = await destFolder.createFile(thumbName, { overwrite: true });
+    await f.write(b64ToBytes(b64), { format: formats.binary });
+    diag("thumb: 已写入 " + thumbName + " (" + Math.round(b64.length * 0.75 / 1024) + "KB)");
+    return f;
+  } catch (e2) {
+    diag("thumb: 写盘失败 " + thumbName + " -> " + ((e2 && e2.message) || String(e2)));
+    return null;
+  }
+}
+
+/* ---- 下面这条路径只服务于「用户手动点『补缩略图』补齐旧记录」，
+ *      不在打开历史页时自动跑（会连续开关文档，画面一直闪）。
+ *      新任务与插入过的记录都不需要它。 ---- */
+
+async function makeEntryThumb(srcEntry, destFolder, thumbName) {
+  if (!srcEntry || !destFolder || !thumbName) return null;
+  /* 已存在就不再重复解码（重复开文档没有收益） */
+  try {
+    const had = await destFolder.getEntry(thumbName);
+    if (had) return had;
+  } catch (eHad) { /* 不存在，继续生成 */ }
+
+  const prevDoc = app.activeDocument;
+  let b64 = "";
+  try {
+    b64 = await psModal(async function () {
+      const d = await app.open(srcEntry);
+      if (!d || d.id == null) throw new Error("打开归档图失败");
+      try {
+        const W = Math.round(Number(d.width) || 0);
+        const H = Math.round(Number(d.height) || 0);
+        if (!W || !H) throw new Error("归档图尺寸异常 " + W + "x" + H);
+        const scale = Math.min(1, THUMB_MAX_SIDE / Math.max(W, H));
+        const tw = Math.max(1, Math.round(W * scale));
+        const th = Math.max(1, Math.round(H * scale));
+        /* 两个维度都给 = 精确尺寸；比例上面已按长边算好，等价于等比缩到 256 */
+        const res = await imaging.getPixels({
+          documentID: d.id,
+          targetSize: { width: tw, height: th },
+          componentSize: 8,
+          colorSpace: "RGB",
+          applyAlpha: true
+        });
+        const holder = (res && res.imageData) ? res.imageData : res;
+        if (!holder) throw new Error("getPixels 未返回数据");
+        let out = "";
+        try {
+          const enc = await imaging.encodeImageData({ imageData: holder, base64: true, colorSpace: "RGB" });
+          if (typeof enc === "string") out = enc;
+          else if (enc && enc.length) out = base64FromBuffer(enc);
+        } finally {
+          try { if (holder.dispose) holder.dispose(); } catch (eD) { /* ignore */ }
+        }
+        if (!out) throw new Error("encodeImageData 未返回数据");
+        diag("thumb: " + thumbName + " " + W + "x" + H + " -> " + tw + "x" + th +
+          " (" + Math.round(out.length * 0.75 / 1024) + "KB)");
+        return out;
+      } finally {
+        try { await closeDocNoSave(d); } catch (eC) { diag("thumb: 关闭临时文档失败 " + ((eC && eC.message) || eC)); }
+      }
+    }, "PS Spark: 生成归档缩略图", 2);
+  } catch (e) {
+    diag("thumb: 生成失败 " + thumbName + " -> " + ((e && e.message) || String(e)));
+    return null;
+  } finally {
+    restoreActiveDoc(prevDoc);
+  }
+
+  try {
+    const bytes = b64ToBytes(b64);
+    const f = await destFolder.createFile(thumbName, { overwrite: true });
+    await f.write(bytes, { format: formats.binary });
+    return f;
+  } catch (e) {
+    diag("thumb: 写盘失败 " + thumbName + " -> " + ((e && e.message) || String(e)));
+    return null;
+  }
+}
+
+/* 串行队列：同一时刻只开一个临时文档，避免连续 open/close 把 PS 顶住或抢走活动文档。
+ * priority=true 的任务插到队首（历史卡片的主图优先于候选小图）。 */
+const __thumbQueue = [];
+let __thumbBusy = false;
+
+function queueEntryThumb(srcEntry, destFolder, thumbName, priority) {
+  return new Promise(function (resolve) {
+    if (__thumbQueue.length > 200) {
+      /* 积压过多（异常情况）时丢弃最早的，避免内存与队列无限增长 */
+      const drop = __thumbQueue.splice(0, 50);
+      drop.forEach(function (t) { try { t.resolve(null); } catch (e) { /* ignore */ } });
+    }
+    const item = { src: srcEntry, dir: destFolder, name: thumbName, resolve: resolve };
+    if (priority) __thumbQueue.unshift(item);
+    else __thumbQueue.push(item);
+    /* 稍微延后启动：归档可能发生在某个模态作用域内，等它释放后再开临时文档，
+     * 避免 psModal 走「重试 1.5s ×2」的空等。 */
+    setTimeout(function () { __runThumbQueue(); }, 250);
+  });
+}
+
+async function __runThumbQueue() {
+  if (__thumbBusy) return;
+  __thumbBusy = true;
+  try {
+    while (__thumbQueue.length) {
+      const t = __thumbQueue.shift();
+      let out = null;
+      try { out = await makeEntryThumb(t.src, t.dir, t.name); }
+      catch (e) { diag("thumb queue warn: " + ((e && e.message) || String(e))); }
+      try { t.resolve(out); } catch (e2) { /* ignore */ }
+      await new Promise(function (r) { setTimeout(r, 120); });
+    }
+  } finally { __thumbBusy = false; }
+}
+
 /*
  * 把「当前选中图层」复制到临时透明文档并导出 PNG：
  * · 临时文档尺寸 = 原画布，图层位置原样保留，其余区域透明 → 与「当前画面」区分明确；
@@ -1476,12 +1916,58 @@ async function selectLayerTransparency() {
   throw new Error("载入图层透明选区失败：" + ((last && last.message) || ""));
 }
 
-/* 选中指定图层（批处理优先；DOM 赋值兜底）。不改变当前选区。 */
-async function selectLayerById(doc, id) {
+/* 选中指定图层。兼容两种调用：(doc, id) 和 (id)（旧调用点只传 id）。
+ * PS 27 批处理的 _id 必须是 number（传字符串/undefined 会抛
+ * 「NAPI API failure: Number expected」），统一经 numOf 转一次。 */
+/* 确保图层「能装下透明」。
+ * PS 的「背景」层是强制不透明的：既不能加蒙版，putPixels 写进去的 alpha 也会被静默丢弃。
+ * 拆图链路只要结果层是背景层，后面全崩：
+ *   ① 抠色算出「抠掉 64%」，画面一点没变；
+ *   ② alphaStats 读到 comps=3 → 覆盖率 100% → 判定「没有元素轮廓」；
+ *   ③ 于是跳过重建、保留模型原图 → 用户看到「元素被放大铺满 + 抠色没生效」。
+ * 幂等：已经是普通层就直接返回 true。必须在 executeAsModal 内调用。 */
+async function ensureAlphaLayer(docId, layerId) {
+  const doc = docById(docId) || app.activeDocument;
+  if (!doc) return false;
+  let L = null;
+  try {
+    const ls = doc.layers || [];
+    for (let i = 0; i < ls.length; i++) {
+      if (ls[i] && String(ls[i].id) === String(layerId)) { L = ls[i]; break; }
+    }
+  } catch (e) { /* ignore */ }
+  if (!L) { diag("ensureAlpha: 未找到图层 id=" + layerId); return false; }
+  if (!L.isBackgroundLayer) return true;
+  if (!(await selectLayerById(doc, L.id))) { diag("ensureAlpha: 未能选中背景层 id=" + layerId); return false; }
+  try {
+    await batchPlay([{
+      _obj: "set",
+      _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }],
+      to: { _obj: "layer", isBackgroundLayer: false },
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+    diag("ensureAlpha: 结果层原为「背景」层（无 alpha 通道）→ 已转为普通图层");
+    return true;
+  } catch (e) {
+    diag("ensureAlpha: 解除背景属性失败 " + ((e && e.message) || String(e)));
+    return false;
+  }
+}
+
+async function selectLayerById(docOrId, maybeId) {
+  let doc = docOrId, id = maybeId;
+  if (maybeId === undefined && docOrId !== null && typeof docOrId !== "object") {
+    id = docOrId; doc = null;
+  }
+  const nid = (typeof numOf === "function") ? numOf(id) : Number(id);
+  if (nid === null || id === undefined || id === null) {
+    diag("selectLayerById: 图层 id 无效（" + String(id) + "）");
+    return false;
+  }
   try {
     await batchPlay([{
       _obj: "select",
-      _target: [{ _ref: "layer", _id: id }],
+      _target: [{ _ref: "layer", _id: nid }],
       makeVisible: false,
       _options: { dialogOptions: "dontDisplay" }
     }]);
@@ -1490,9 +1976,10 @@ async function selectLayerById(doc, id) {
     diag("selectLayerById: 批处理选中失败（" + e.message + "），尝试 DOM");
   }
   try {
-    const ls = doc.layers || [];
+    const d = doc || app.activeDocument;
+    const ls = d.layers || [];
     for (let i = 0; i < ls.length; i++) {
-      if (ls[i] && ls[i].id === id) { doc.activeLayers = [ls[i]]; return true; }
+      if (ls[i] && String(ls[i].id) === String(id)) { d.activeLayers = [ls[i]]; return true; }
     }
   } catch (e2) { diag("selectLayerById: DOM 选中失败 " + e2.message); }
   return false;
@@ -1516,7 +2003,8 @@ async function deleteLayerById(doc, id) {
 /*
  * 把当前图层剪贴到它正下方的那一层（Ctrl+Alt+G）：下方层的 alpha/图层蒙版
  * 直接当形状遮罩用，不需要载入选区、不需要羽化、不需要新建蒙版。
- * 拆图元素层重建走这条路，正是为了绕开「命令"建立"当前不可用」「羽化不可用」。
+ * ⚠ 目前拆图已改走「图层蒙版法」（见 rebuildLayerWithOriginalPixels v3）：
+ *   剪贴命令会静默作用到别的层上，校验看不出来，最终产物可能是整张原图。此函数留作备用。
  */
 async function clipActiveLayerToBelow() {
   try {
@@ -1576,14 +2064,630 @@ async function mergeLayersByIds(doc, ids) {
   }
 }
 
-/*
- * 用「模型给出的透明通道 + 原图像素」重建元素层。
+/* 读图层的「透明度覆盖率 + 轮廓内均色」（抽样到 n×n，足够做体检、不占内存）。
+ * 用来判断模型输出到底有没有给出元素轮廓：
+ *  - 覆盖率接近 100% = 模型铺满整幅（没给元素），拿原图去剪贴只会得到整张原图；
+ *  - 轮廓内均色与原图差得很远 = 模型把元素画到了别处，用它的轮廓去抠原图会抠错东西。
  *
- * 主路径（v2，默认）：置入原图 → 剪贴到生成层（下方层的 alpha/蒙版即形状）→ 合并两层。
- *   全程不碰选区/羽化/建蒙版，杜绝「命令"建立"当前不可用」「羽化命令不可用」。
- * 回退路径（v1，兼容）：载入生成层透明选区 → 羽化 → 给原图建蒙版。
- *   仅在剪贴不可用时尝试，且选区为空会自动放弃（不再硬报错）。
- * 需在 executeAsModal 内调用；失败会清理并保留生成层（返回 false）。
+ * ⚠ 必须按原始尺寸读、自己抽样：
+ *   带 targetSize 时 PS 会把 alpha 通道丢掉（返回 3 通道），覆盖率恒等于 100%，
+ *   于是「已经抠好的元素层」被误判成「没有元素轮廓」→ 拆图退化成保留模型原图
+ *   （用户看到的就是元素被放到最大、位置也不在原图上）。 */
+/* ===== 读图层像素（含 alpha）=====
+ * 坑（Adobe 官方文档已确认）：imaging.getPixels 传 applyAlpha:true 时，RGBA 会**在白底上合成成 RGB**，
+ *     返回的 imageData 不再含 alpha（components=3）。反过来，图层含透明像素且不传 applyAlpha 时返回 4 通道。
+ *     之前 layerAlphaStats 用 applyAlpha:true → 永远 3 通道 → 永远判「图层没有 alpha」→ 覆盖率恒 100%。
+ *     后果连锁三处：抠色自检误报失败、对位判定「元素层没有 alpha 通道」直接跳过、
+ *     重建判「没有元素轮廓」→ 保留模型输出（用户看到的就是「最大摆放」+「抠色没生效」）。
+ * 做法：只按 applyAlpha:false 读。拿回 3 通道就说明「该层确实没有透明像素」，不是读法问题。 */
+async function getPixelsRGBA(docId, layerId, extra) {
+  const nid = function (v) { return (typeof numOf === "function") ? numOf(v) : Number(v); };
+  const opt = {
+    documentID: nid(docId), layerID: nid(layerId),
+    colorSpace: "RGB", componentSize: 8, applyAlpha: false
+  };
+  if (extra) Object.keys(extra).forEach(function (k) { opt[k] = extra[k]; });
+  let holder = null;
+  try {
+    const res = await imaging.getPixels(opt);
+    holder = res && res.imageData;
+    if (!holder || typeof holder.getData !== "function") return null;
+    const raw = await holder.getData({ chunky: true });
+    const w = holder.width, h = holder.height;
+    if (!w || !h || !raw || !raw.length) return null;
+    const comps = holder.components || (raw.length >= w * h * 4 ? 4 : 3);
+    const sb = res && res.sourceBounds;
+    return {
+      w: w, h: h, comps: comps,
+      data: raw instanceof Uint8Array ? raw : new Uint8Array(raw),
+      left: sb ? Math.round(sb.left || 0) : 0,
+      top: sb ? Math.round(sb.top || 0) : 0,
+      profile: holder.colorProfile || null
+    };
+  } catch (e) {
+    diag("getPixels: 读取失败 " + ((e && e.message) || String(e)));
+    return null;
+  } finally {
+    try { if (holder && holder.dispose) holder.dispose(); } catch (eD) { /* ignore */ }
+  }
+}
+
+/* 读图层蒙版的覆盖率。
+ * 为什么要单独读：蒙版不改图层像素的 alpha —— 拿 getPixels 去量「原图 + 蒙版」这种层，
+ * 永远读到整幅不透明（100%），验收就会误判「蒙版没生效」，把做对的结果删掉。 */
+async function layerMaskStats(docId, layerId, n) {
+  const side = n || 96;
+  const nid = function (v) { return (typeof numOf === "function") ? numOf(v) : Number(v); };
+  let holder = null;
+  try {
+    const res = await imaging.getLayerMask({ documentID: nid(docId), layerID: nid(layerId), kind: "user" });
+    holder = (res && res.imageData) ? res.imageData : res;
+    if (!holder || typeof holder.getData !== "function") return null;
+    const raw = await holder.getData({ chunky: true });
+    const w = holder.width, h = holder.height;
+    if (!w || !h || !raw || !raw.length) return null;
+    const comps = holder.components || 1;
+    const mask = new Uint8Array(side * side);
+    let hit = 0;
+    for (let gy = 0; gy < side; gy++) {
+      const sy = Math.min(h - 1, Math.floor((gy + 0.5) * h / side));
+      for (let gx = 0; gx < side; gx++) {
+        const sx = Math.min(w - 1, Math.floor((gx + 0.5) * w / side));
+        if (raw[(sy * w + sx) * comps] > 128) { hit++; mask[gy * side + gx] = 1; }
+      }
+    }
+    return { ratio: hit / (side * side), mean: null, mask: mask, w: side, h: side };
+  } catch (e) {
+    return null;  /* 没有蒙版 → 调用方退回像素 alpha */
+  } finally {
+    try { if (holder && holder.dispose) holder.dispose(); } catch (eD) { /* ignore */ }
+  }
+}
+
+/* 读图层的像素范围（px）。透明像素不计入 bounds，所以「抠色后范围收缩」
+ * 是「alpha 确实写进去了」的独立证据，不依赖 getPixels 的通道语义。 */
+async function layerBoundsPx(docId, layerId) {
+  const nid = function (v) { return (typeof numOf === "function") ? numOf(v) : Number(v); };
+  try {
+    const res = await batchPlay([{
+      _obj: "get",
+      _target: [{ _ref: "layer", _id: nid(layerId) }],
+      _options: { dialogOptions: "dontDisplay" }
+    }]);
+    const b = res && res[0] && (res[0].boundsNoEffects || res[0].bounds);
+    if (!b) return null;
+    let r = 72;
+    try {
+      const dd = docById(docId);
+      r = (dd && dd.resolution) || 72;
+    } catch (eR) { /* ignore */ }
+    const l = toPx(b.left, r), t = toPx(b.top, r), ri = toPx(b.right, r), bo = toPx(b.bottom, r);
+    return { left: Math.round(l), top: Math.round(t), w: Math.round(ri - l), h: Math.round(bo - t) };
+  } catch (e) {
+    diag("layerBounds: 读取失败 " + ((e && e.message) || String(e)));
+    return null;
+  }
+}
+
+/* 按 mask 范围取图层均色（mask 为 side×side 抽样网格）。
+ * 用于「有图层蒙版」的层：它的像素是不透明的整幅图，直接取均色会混进背景。 */
+async function meanColorInMask(docId, layerId, mask, side) {
+  try {
+    const px = await getPixelsRGBA(docId, layerId);
+    if (!px) return null;
+    let r = 0, g = 0, b = 0, hit = 0;
+    for (let gy = 0; gy < side; gy++) {
+      const sy = Math.min(px.h - 1, Math.floor((gy + 0.5) * px.h / side));
+      for (let gx = 0; gx < side; gx++) {
+        if (!mask[gy * side + gx]) continue;
+        const sx = Math.min(px.w - 1, Math.floor((gx + 0.5) * px.w / side));
+        const s = (sy * px.w + sx) * px.comps;
+        r += px.data[s]; g += px.data[s + 1]; b += px.data[s + 2]; hit++;
+      }
+    }
+    return hit ? [r / hit, g / hit, b / hit] : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function layerAlphaStats(docId, layerId, n) {
+  const side = n || 96;
+  try {
+    const px = await getPixelsRGBA(docId, layerId);
+    if (!px) return null;
+    const raw = px.data, w = px.w, h = px.h, comps = px.comps;
+    /* 抽样网格：每个格子取中心像素（够用，且 O(side²)） */
+    const mask = new Uint8Array(side * side);
+    let hit = 0, r = 0, g = 0, b = 0;
+    for (let gy = 0; gy < side; gy++) {
+      const sy = Math.min(h - 1, Math.floor((gy + 0.5) * h / side));
+      for (let gx = 0; gx < side; gx++) {
+        const sx = Math.min(w - 1, Math.floor((gx + 0.5) * w / side));
+        const s = (sy * w + sx) * comps;
+        const a = comps >= 4 ? raw[s + 3] : 255;
+        if (a > 128) { hit++; mask[gy * side + gx] = 1; r += raw[s]; g += raw[s + 1]; b += raw[s + 2]; }
+      }
+    }
+    if (comps < 4) diag("alphaStats: 图层像素没有 alpha 通道（comps=" + comps + "），覆盖率不可信");
+    if (!hit) return { ratio: 0, mean: null, mask: mask, w: side, h: side };
+    return { ratio: hit / (side * side), mean: [r / hit, g / hit, b / hit], mask: mask, w: side, h: side };
+  } catch (e) {
+    diag("rebuild: 读图层像素失败 " + ((e && e.message) || String(e)));
+    return null;
+  }
+}
+
+/* 在原图的同一位置上，按「生成层轮廓」取均色，与生成层均色比距离。
+ * 距离大 → 轮廓与内容对不上（模型重绘时挪了位置/改了比例），此时抠原图会抠错。 */
+async function silhouetteColorDistance(docId, origLayerId, genStats) {
+  if (!genStats || !genStats.mean) return null;
+  try {
+    const res = await imaging.getPixels({
+      documentID: Number(docId), layerID: Number(origLayerId),
+      colorSpace: "RGB", componentSize: 8, applyAlpha: false,
+      targetSize: { width: genStats.w, height: genStats.h }
+    });
+    const holder = res && res.imageData;
+    if (!holder || typeof holder.getData !== "function") return null;
+    const raw = await holder.getData({ chunky: true });
+    const comps = holder.components || (raw.length >= genStats.w * genStats.h * 4 ? 4 : 3);
+    let hit = 0, r = 0, g = 0, b = 0;
+    for (let i = 0; i < genStats.mask.length; i++) {
+      if (!genStats.mask[i]) continue;
+      const s = i * comps;
+      r += raw[s]; g += raw[s + 1]; b += raw[s + 2]; hit++;
+    }
+    try { if (holder.dispose) holder.dispose(); } catch (eD) { /* ignore */ }
+    if (!hit) return null;
+    const m = [r / hit, g / hit, b / hit];
+    const dr = m[0] - genStats.mean[0], dg = m[1] - genStats.mean[1], db = m[2] - genStats.mean[2];
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  } catch (e) {
+    diag("rebuild: 轮廓比对失败 " + ((e && e.message) || String(e)));
+    return null;
+  }
+}
+
+/* ================= 拆图：把元素「放回原图的位置」 =================
+ * 背景：让模型「只画元素 + 纯色底」时，它经常把元素放大居中重画（实测：原图里中等大小的南瓜
+ *       被画成铺满整幅），所以元素层会出现两个问题——
+ *       ① 直接用模型输出：元素被放大，位置也不在原图的位置（用户看到的就是「最大摆放」）；
+ *       ② 用模型轮廓去抠原图：轮廓在模型的位置，抠到的是原图别处的内容。
+ * 做法：拿「模型画的元素」当模板，在原始画面里多尺度找它真正的落点（位置 + 尺寸），
+ *       找到后把元素层的 alpha 重采样到该位置/尺寸，再走「原图像素 + 轮廓蒙版」重建。
+ *       匹配不可信时什么都不做，保持旧行为（宁可保留模型输出，也不能抠错内容）。
+ */
+const ALIGN_SIDE = 192;
+
+function alignGridSize(W, H) {
+  const long = Math.max(1, Math.max(W, H));
+  const s = Math.min(1, ALIGN_SIDE / long);
+  return { w: Math.max(16, Math.round(W * s)), h: Math.max(16, Math.round(H * s)) };
+}
+
+/* 整幅读一个图层的 RGBA（原始尺寸）。needsAlpha=false 时即使没有 alpha 也读（按不透明算）。 */
+async function readLayerRGBAFull(docId, layerId, needsAlpha) {
+  /* 走统一的自适应读法：applyAlpha 的语义在各版本不一致，这里保证「要 alpha 时拿得到 4 通道」 */
+  const px = await getPixelsRGBA(docId, layerId);
+  if (!px) return null;
+  if (needsAlpha && px.comps < 4) {
+    diag("readRGB: 该层没有独立 alpha（comps=" + px.comps + "），按不透明处理");
+  }
+  return { w: px.w, h: px.h, comps: px.comps, data: px.data, left: px.left, top: px.top };
+}
+
+/* 抽样缩到 gw×gh，统一成 4 通道（缺 alpha 按不透明） */
+function downsampleRGBA(src, gw, gh) {
+  const out = new Uint8Array(gw * gh * 4);
+  for (let gy = 0; gy < gh; gy++) {
+    const sy = Math.min(src.h - 1, Math.floor((gy + 0.5) * src.h / gh));
+    for (let gx = 0; gx < gw; gx++) {
+      const sx = Math.min(src.w - 1, Math.floor((gx + 0.5) * src.w / gw));
+      const s = (sy * src.w + sx) * src.comps, d = (gy * gw + gx) * 4;
+      out[d] = src.data[s];
+      out[d + 1] = src.data[s + 1];
+      out[d + 2] = src.data[s + 2];
+      out[d + 3] = src.comps >= 4 ? src.data[s + 3] : 255;
+    }
+  }
+  return { w: gw, h: gh, comps: 4, data: out };
+}
+
+/* 在 o（原图）里找 g（模型元素）最像的位置与缩放。纯函数，便于单测。
+ * 返回 { ok, score, src:{x,y,w,h}, dst:{x,y,w,h} }（都是网格坐标） */
+function matchElementInImage(o, g, opts) {
+  const TH = (opts && opts.samples) || 16;
+  const minCorr = (opts && opts.minCorr) || 0.55;
+  let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, cnt = 0;
+  for (let y = 0; y < g.h; y++) {
+    for (let x = 0; x < g.w; x++) {
+      if (g.data[(y * g.w + x) * 4 + 3] <= 128) continue;
+      cnt++;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  if (cnt < 40 || bw < 5 || bh < 5) return { ok: false, reason: "元素轮廓太小（" + bw + "×" + bh + "）" };
+
+  /* 模板：bbox 归一化成 TH×TH 的灰度 + 覆盖掩码，并算好零均值 */
+  /* 模板：bbox 归一化成 TH×TH 的灰度（用梯度做过对照实验：
+   * 在这个抽样密度下边缘会走样，相关度整体掉到 0.37，反而不可用） */
+  const tpl = new Float32Array(TH * TH);
+  const tm = new Uint8Array(TH * TH);
+  let tHit = 0, tSum = 0;
+  for (let j = 0; j < TH; j++) {
+    const sy = Math.min(g.h - 2, Math.max(1, Math.floor(y0 + (j + 0.5) * bh / TH)));
+    for (let i = 0; i < TH; i++) {
+      const sx = Math.min(g.w - 2, Math.max(1, Math.floor(x0 + (i + 0.5) * bw / TH)));
+      const s = (sy * g.w + sx) * 4;
+      if (g.data[s + 3] > 128) { tm[j * TH + i] = 1; tHit++; }
+      tpl[j * TH + i] = 0.299 * g.data[s] + 0.587 * g.data[s + 1] + 0.114 * g.data[s + 2];
+    }
+  }
+  if (tHit < TH * TH * 0.12) return { ok: false, reason: "元素轮廓可采样点太少" };
+  for (let i = 0; i < TH * TH; i++) if (tm[i]) tSum += tpl[i];
+  const tMean = tSum / tHit;
+  let tVar = 0;
+  for (let i = 0; i < TH * TH; i++) if (tm[i]) tVar += (tpl[i] - tMean) * (tpl[i] - tMean);
+  tVar = Math.sqrt(tVar / tHit);
+  if (tVar < 2) return { ok: false, reason: "元素几乎没有明暗差异，无法定位" };
+
+  /* 原图灰度面（一次算好，滑窗只做减法） */
+  const og = new Float32Array(o.w * o.h);
+  for (let i = 0, n = og.length; i < n; i++) {
+    const s = i * 4;
+    og[i] = 0.299 * o.data[s] + 0.587 * o.data[s + 1] + 0.114 * o.data[s + 2];
+  }
+
+
+  /* 零均值归一化相关（ZNCC）：对整体明暗/对比度差异不敏感，平坦区域（方差≈0）自然判 0，
+   * 避免「原图里根本没有这个元素」时被一片纯色骗到（实测纯色图用均差会得到 41 的假高分）。 */
+  const scan = function (tw, th, step, bx0, by0, bx1, by1, best) {
+    for (let y = by0; y + th <= by1; y += step) {
+      for (let x = bx0; x + tw <= bx1; x += step) {
+        let sum = 0, sum2 = 0, n = 0;
+        for (let j = 0; j < TH; j++) {
+          const row = (y + Math.floor((j + 0.5) * th / TH)) * o.w;
+          for (let i = 0; i < TH; i++) {
+            if (!tm[j * TH + i]) continue;
+            const v = og[row + x + Math.floor((i + 0.5) * tw / TH)];
+            sum += v; sum2 += v * v; n++;
+          }
+        }
+        if (n < 12) continue;
+        const mean = sum / n;
+        const varr = sum2 / n - mean * mean;
+        if (varr < 9) continue;                      /* 平坦区域没有匹配价值 */
+        const std = Math.sqrt(varr);
+        let cov = 0;
+        for (let j = 0; j < TH; j++) {
+          const row = (y + Math.floor((j + 0.5) * th / TH)) * o.w;
+          for (let i = 0; i < TH; i++) {
+            if (!tm[j * TH + i]) continue;
+            cov += (tpl[j * TH + i] - tMean) * (og[row + x + Math.floor((i + 0.5) * tw / TH)] - mean);
+          }
+        }
+        const corr = cov / (tHit * tVar * std);
+        if (corr > best.corr) { best.corr = corr; best.x = x; best.y = y; best.w = tw; best.h = th; }
+      }
+    }
+    return best;
+  };
+
+  /* 粗搜：分两段尺度。
+   *  段① 0.35~1.0：模型最常见的毛病是「把元素放大/居中重画」，原图里真正的元素更小；
+   *  段② 1.0~1.7：模型偶尔也把元素画小（实测缩小到 0.6 倍时，只扫段①相关度只有 0.52 被拒），
+   *        但这一段必须在段①「明显不够好」时才启用 —— 否则放大档会靠纹理自相似去抢已经对好的结果。
+   *  档位不能太疏：12 档时相邻档差 23%，尺寸会差一格（实测 60px 的元素被定成 51px）。 */
+  const perScale = [];
+  const coarse = function (sMax, sMin, steps) {
+    for (let k = 0; k < steps; k++) {
+      const sc = sMax - (sMax - sMin) * k / (steps - 1);
+      const tw = Math.round(bw * sc), th = Math.round(bh * sc);
+      if (tw < 10 || th < 10) continue;
+      if (tw >= o.w * 0.99 && th >= o.h * 0.99) continue;
+      const r = scan(tw, th, Math.max(3, Math.round(Math.min(tw, th) / 10)), 0, 0, o.w, o.h,
+        { corr: -2, x: 0, y: 0, w: tw, h: th });
+      if (r.corr > -1) perScale.push(r);
+    }
+  };
+  coarse(1.0, 0.35, 18);
+  let earlyTop = -2;
+  perScale.forEach(function (r) { if (r.corr > earlyTop) earlyTop = r.corr; });
+  const widened = earlyTop < 0.6;
+  if (widened) {
+    coarse(1.7, 1.0, 8);
+    diag("align: 元素可能被模型画小了（段①最佳 " + earlyTop.toFixed(2) + "），补扫放大档");
+  }
+  if (!perScale.length) return { ok: false, reason: "没有可比较的位置" };
+  /* 尺度选择：「元素的一小块」和「整个元素」相关度往往只差一点（自相似），
+   * 只取最高分会被判成一小块。所以在「够好的候选」里挑尺寸最大的那个。 */
+  let topCorr = -2;
+  perScale.forEach(function (r) { if (r.corr > topCorr) topCorr = r.corr; });
+  const good = perScale.filter(function (r) { return r.corr >= topCorr - 0.08; });
+  good.sort(function (a, b) { return (b.w * b.h) - (a.w * a.h); });
+  let best = good[0];
+  /* 细搜①：位置，步长 1 */
+  best = scan(best.w, best.h, 1,
+    Math.max(0, best.x - 6), Math.max(0, best.y - 6),
+    Math.min(o.w, best.x + best.w + 7), Math.min(o.h, best.y + best.h + 7), best);
+  /* 细搜②：尺寸，在最优尺度附近再扫一遍（位置同步微调）。
+   * 未启用放大档时只给 ±5%（落在调用方 6% 的「本来就对」容差内，避免把已经对好的元素
+   * 无端缩小 —— 实测原尺寸下小窗口的 corr 会高出一点点，不加限制就会缩水 8%）；
+   * 启用放大档时给到 ±10%，因为第二段粗搜档差 9.4%，范围小了补不上档与档之间的缝。 */
+  const baseW = best.w, baseH = best.h, baseX = best.x, baseY = best.y;
+  const fFactors = widened
+    ? [0.90, 0.95, 0.97, 1.0, 1.03, 1.05, 1.10]
+    : [0.95, 0.97, 1.0, 1.03, 1.05];
+  fFactors.forEach(function (f) {
+    const tw = Math.max(4, Math.round(baseW * f)), th = Math.max(4, Math.round(baseH * f));
+    best = scan(tw, th, 1,
+      Math.max(0, baseX - 3), Math.max(0, baseY - 3),
+      Math.min(o.w, baseX + baseW + 4), Math.min(o.h, baseY + baseH + 4), best);
+  });
+
+  if (best.corr < minCorr) {
+    return { ok: false, reason: "在原图里找不到对应内容（相关度 " + best.corr.toFixed(2) + " < " + minCorr + "）" };
+  }
+  return {
+    ok: true, corr: best.corr,
+    src: { x: x0, y: y0, w: bw, h: bh },
+    dst: { x: best.x, y: best.y, w: best.w, h: best.h }
+  };
+}
+
+/* 把生成层的 alpha 从「模型自己的位置/尺寸」重采样到目标位置/尺寸（就地覆盖像素）。 */
+async function remapLayerAlpha(docId, layerId, full, srcBox, dstBox) {
+  const w = full.w, h = full.h;
+  const out = new Uint8Array(w * h * 4);
+  const dx = Math.round(dstBox.left), dy = Math.round(dstBox.top);
+  const dw = Math.max(1, Math.round(dstBox.width)), dh = Math.max(1, Math.round(dstBox.height));
+  for (let y = 0; y < dh; y++) {
+    const ty = dy + y;
+    if (ty < 0 || ty >= h) continue;
+    const sy = Math.min(h - 1, Math.max(0, Math.round(srcBox.top + (y + 0.5) / dh * srcBox.height)));
+    for (let x = 0; x < dw; x++) {
+      const tx = dx + x;
+      if (tx < 0 || tx >= w) continue;
+      const sx = Math.min(w - 1, Math.max(0, Math.round(srcBox.left + (x + 0.5) / dw * srcBox.width)));
+      const s = (sy * w + sx) * 4, d = (ty * w + tx) * 4;
+      out[d] = full.data[s];
+      out[d + 1] = full.data[s + 1];
+      out[d + 2] = full.data[s + 2];
+      out[d + 3] = full.data[s + 3];   /* 透明像素照样透明，只搬形状 */
+    }
+  }
+  const imgData = await imaging.createImageDataFromBuffer(out, {
+    width: w, height: h, components: 4, componentSize: 8, colorSpace: "RGB"
+  });
+  await imaging.putPixels({
+    documentID: (typeof numOf === "function") ? numOf(docId) : Number(docId),
+    layerID: (typeof numOf === "function") ? numOf(layerId) : Number(layerId),
+    imageData: imgData, replace: true,
+    /* Bounds 必须给全四个值，缺 right/bottom 会被当成 0 → 写入无效且不报错。
+     * 原点用读像素时的 sourceBounds：getPixels 给的是图层 bounds 区域，不一定是画布 (0,0)。 */
+    targetBounds: { left: (full.left || 0), top: (full.top || 0), right: (full.left || 0) + w, bottom: (full.top || 0) + h },
+    commandName: "PS Spark: 拆图对位"
+  });
+  try { if (imgData.dispose) imgData.dispose(); } catch (eD) { /* ignore */ }
+}
+
+/* 元素层没有 alpha 时，从它自己的边框推算轮廓（**只在内存里算，不写图层**）。
+ *
+ * 为什么要这一步：抠色一旦失败或被跳过，元素层就没有 alpha，对位会整段跳过，
+ * 结果就是「模型把元素放大居中 → 直接贴上去」= 用户看到的「最大摆放」。
+ * 有了这条兜底，位置/尺寸修正不再依赖抠色是否成功（抠色成功时走正常路径，不会到这里）。
+ * 返回 {w,h,comps:4,data,left,top,hex,ratio,tol}；推不出轮廓时返回 null。 */
+function synthAlphaFromBorder(g) {
+  const w = g.w, h = g.h, comps = g.comps, d = g.data;
+  if (!w || !h || !d) return null;
+  const band = Math.max(2, Math.round(Math.min(w, h) * 0.02));
+  const rs = [], gs2 = [], bs = [];
+  for (let y = 0; y < h; y += 2) {
+    for (let x = 0; x < w; x += 2) {
+      if (x >= band && x < w - band && y >= band && y < h - band) continue;
+      const s = (y * w + x) * comps;
+      rs.push(d[s]); gs2.push(d[s + 1]); bs.push(d[s + 2]);
+    }
+  }
+  if (rs.length < 32) return null;
+  const med = function (arr) {
+    const a = arr.slice().sort(function (m, n) { return m - n; });
+    return a[Math.floor(a.length / 2)];
+  };
+  const key = [med(rs), med(gs2), med(bs)];
+  const devs = [];
+  for (let i = 0; i < rs.length; i++) {
+    devs.push(Math.max(Math.abs(rs[i] - key[0]), Math.abs(gs2[i] - key[1]), Math.abs(bs[i] - key[2])));
+  }
+  devs.sort(function (m, n) { return m - n; });
+  const p90 = devs[Math.floor(devs.length * 0.9)] || 0;
+  const inlier = devs.filter(function (v) { return v <= 48; }).length / devs.length;
+  /* 边框本身就不统一（模型直接画了真实背景）→ 推不出轮廓，交回调用方 */
+  if (inlier < 0.7) return null;
+  const tolK = Math.max(28, Math.min(90, Math.round(p90 * 1.3) + 12));
+
+  const out = new Uint8Array(w * h * 4);
+  let keep = 0;
+  const isKey = makeKeyTest(key, tolK);
+  for (let i = 0, n = w * h; i < n; i++) {
+    const s = i * comps, t4 = i * 4;
+    const r = d[s], gg = d[s + 1], bb = d[s + 2];
+    out[t4] = r; out[t4 + 1] = gg; out[t4 + 2] = bb;
+    const hit = isKey(r, gg, bb);
+    out[t4 + 3] = hit ? 0 : 255;
+    if (!hit) keep++;
+  }
+  const ratio = keep / (w * h);
+  if (ratio < 0.01 || ratio > 0.9) return null;
+  const hex = "#" + key.map(function (v) {
+    const s2 = Math.max(0, Math.min(255, Math.round(v))).toString(16).toUpperCase();
+    return s2.length < 2 ? "0" + s2 : s2;
+  }).join("");
+  return { w: w, h: h, comps: 4, data: out, left: g.left || 0, top: g.top || 0, hex: hex, ratio: ratio, tol: tolK };
+}
+
+/* 元素轮廓是否贴着画布边（= 模型把它放大到越界被裁掉了）。
+ * 这类轮廓去匹配必然对不上：模型只画出了元素的一部分，而原图里是完整的。 */
+function alphaTouchesEdge(g, pad) {
+  const p = pad == null ? 2 : pad;
+  for (let y = 0; y < g.h; y++) {
+    for (let x = 0; x < g.w; x++) {
+      if (g.data[(y * g.w + x) * 4 + 3] <= 128) continue;
+      if (x < p || y < p || x >= g.w - p || y >= g.h - p) return true;
+    }
+  }
+  return false;
+}
+
+/* 只保留轮廓中央 f 比例的区域，作为「元素被裁切」时的匹配模板。
+ * 中间那块一定完整在画面内，用它去匹配比用被切掉一角的完整轮廓可靠得多。 */
+function cropAlphaToCenter(g, f) {
+  let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
+  for (let y = 0; y < g.h; y++) {
+    for (let x = 0; x < g.w; x++) {
+      if (g.data[(y * g.w + x) * 4 + 3] <= 128) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < x0 || y1 < y0) return null;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const hw = (x1 - x0 + 1) * f / 2, hh = (y1 - y0 + 1) * f / 2;
+  const out = { w: g.w, h: g.h, comps: 4, data: new Uint8Array(g.data) };
+  let keep = 0;
+  for (let y = 0; y < g.h; y++) {
+    for (let x = 0; x < g.w; x++) {
+      const i = (y * g.w + x) * 4 + 3;
+      if (x < cx - hw || x > cx + hw || y < cy - hh || y > cy + hh) out.data[i] = 0;
+      else if (out.data[i] > 128) keep++;
+    }
+  }
+  return keep ? out : null;
+}
+
+/* 把「中央 f 区域的检出框」按 1/f 还原成整块元素 */
+function expandBox(b, f) {
+  if (!f || f === 1) return b;
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  const w2 = b.w / f, h2 = b.h / f;
+  return { x: cx - w2 / 2, y: cy - h2 / 2, w: w2, h: h2 };
+}
+
+/* 对外入口：把元素层对回原图位置。需在 executeAsModal 内调用。
+ * 返回 { ok, changed, score, reason }；任何异常都只返回 ok:false，不影响主流程。 */
+async function alignElementLayerToOriginal(docId, genLayerId, origLayerId, W, H) {
+  try {
+    if (genLayerId == null || origLayerId == null) return { ok: false, reason: "缺少图层 id" };
+    const g0 = await readLayerRGBAFull(docId, genLayerId, true);
+    if (!g0) return { ok: false, reason: "读不到元素层像素" };
+    if (g0.w * g0.h > 12e6) return { ok: false, reason: "画面太大（" + g0.w + "×" + g0.h + "），跳过对位" };
+    /* 抠色失败/被跳过时元素层没有 alpha。以前这里直接 return，于是「模型把元素放大居中」
+     * 这个场景永远修不好。现在按边框底色在内存里推算轮廓，位置修正不再依赖抠色。 */
+    let g = g0;
+    let synthetic = false;
+    if (g0.comps < 4) {
+      const syn = synthAlphaFromBorder(g0);
+      if (!syn) return { ok: false, reason: "元素层没有 alpha，且底色不统一（推不出元素轮廓）" };
+      diag("align: 元素层没有 alpha → 按边框底色 " + syn.hex + " 在内存里推算轮廓（占画面 " +
+        Math.round(syn.ratio * 100) + "%，容差 " + syn.tol + "），继续对位");
+      g = syn;
+      synthetic = true;
+    }
+    const o = await readLayerRGBAFull(docId, origLayerId, false);
+    if (!o) return { ok: false, reason: "读不到原图参考层" };
+
+    /* getPixels 给的是「图层自己的 bounds 区域」，不是整幅画布。
+     * 两层都必须是画布尺寸，否则同一个抽样网格下的坐标不可比（会把元素层当成整幅原图来搜）。
+     * 尺寸不符时宁可不做，也不能把元素挪到错的位置。 */
+    if (W && H) {
+      const fit = function (b) { return Math.abs(b.w - W) <= 2 && Math.abs(b.h - H) <= 2; };
+      if (!fit(g)) return { ok: false, reason: "元素层不是画布尺寸（" + g.w + "×" + g.h + "），跳过对位" };
+      if (!fit(o)) return { ok: false, reason: "参考层不是画布尺寸（" + o.w + "×" + o.h + "），跳过对位" };
+    }
+
+    const gr = alignGridSize(W || g.w, H || g.h);
+    const oR = downsampleRGBA(o, gr.w, gr.h);
+    const gR = downsampleRGBA(g, gr.w, gr.h);
+    const edge = alphaTouchesEdge(g, 2);
+    let m = matchElementInImage(oR, gR, { samples: 16, minCorr: 0.55 });
+    let f = 1;
+    /* 轮廓贴着画布边 = 模型把元素放大到越界、只画出了一部分。
+     * 完整轮廓带着被切断的边界去匹配，相关度会明显偏低（实测真实数据 0.50 < 0.55，
+     * 于是整段对位被跳过，用户看到的就是「最大摆放」）。
+     * 改法：用轮廓中央区域（缩到 35%~70% 一定还在画面内）当模板，检出后按 1/f 还原整块。
+     * 对照实测（同一张真实模型输出）：完整 0.50 / 中央85% 0.72 / 中央70% 0.74 / 中央40% 0.88。 */
+    if (!m.ok || edge) {
+      const tries = edge ? [0.7, 0.5, 0.35] : [0.7, 0.5];
+      const cand = [];
+      tries.forEach(function (ff) {
+        const cg = cropAlphaToCenter(g, ff);
+        if (!cg) return;
+        const r = matchElementInImage(oR, downsampleRGBA(cg, gr.w, gr.h), { samples: 16, minCorr: 0.55 });
+        if (r.ok) cand.push({ m: r, f: ff });
+      });
+      if (cand.length) {
+        let top = -2;
+        cand.forEach(function (c) { if (c.m.corr > top) top = c.m.corr; });
+        /* 「够好」里挑区域最大的：越小的模板越容易靠一段通用纹理拿到虚高相关度，
+         * 区域大一些能保证几何还原更稳（实测 70%/50%/35% 的还原结果一致，但有大小之别）。 */
+        const good = cand.filter(function (c) { return c.m.corr >= top - 0.05; });
+        good.sort(function (a, b) { return b.f - a.f; });
+        m = good[0].m;
+        f = good[0].f;
+        diag("align: " + (edge ? "元素轮廓贴边（模型放大越界）" : "完整轮廓匹配不足") +
+          " → 改用轮廓中央 " + Math.round(f * 100) + "% 当模板，相关度 " + m.corr.toFixed(2));
+      } else if (edge && m.ok) {
+        /* 没有更好的，就退回完整轮廓的结果，总比不动强 */
+        diag("align: 元素轮廓贴边，中央模板也没匹配上，沿用完整轮廓结果（相关度 " + m.corr.toFixed(2) + "）");
+      }
+    }
+    if (!m.ok) { diag("align: " + m.reason + " → 保留模型输出的位置"); return m; }
+
+    const msrc = expandBox(m.src, f), mdst = expandBox(m.dst, f);
+    const k = (W || g.w) / gr.w;
+    const src = { left: msrc.x * k, top: msrc.y * k, width: msrc.w * k, height: msrc.h * k };
+    const dst = { left: mdst.x * k, top: mdst.y * k, width: mdst.w * k, height: mdst.h * k };
+
+    /* 位置/尺寸本来就差不多 → 不折腾 */
+    const near = function (a, b, tol) { return Math.abs(a - b) <= Math.max(2, Math.abs(b) * tol); };
+    if (near(src.left, dst.left, 0.04) && near(src.top, dst.top, 0.04) &&
+        near(src.width, dst.width, 0.06) && near(src.height, dst.height, 0.06)) {
+      diag("align: 元素本来就在原图位置（差 " + Math.round(Math.abs(src.width - dst.width)) + "px），不需要对位");
+      return { ok: true, changed: false, corr: m.corr, synthetic: synthetic };
+    }
+
+    await remapLayerAlpha(docId, genLayerId, g, src, dst);
+    diag("align: 元素已对回原图位置 " + Math.round(src.width) + "×" + Math.round(src.height) +
+      " → " + Math.round(dst.width) + "×" + Math.round(dst.height) +
+      " @ (" + Math.round(dst.left) + "," + Math.round(dst.top) + ")，相关度 " + m.corr.toFixed(2) +
+      (synthetic ? "（轮廓由边框底色推算，已一并写入 alpha）" : ""));
+    return { ok: true, changed: true, corr: m.corr, src: src, dst: dst, synthetic: synthetic };
+  } catch (e) {
+    diag("align: 对位失败 " + ((e && e.message) || String(e)));
+    return { ok: false, reason: (e && e.message) || String(e) };
+  }
+}
+
+/*
+ * 用「模型给出的元素轮廓 + 原图像素」重建元素层。
+ *
+ * v3（当前）：原图整层置入 → 载入生成层透明度作为选区 → 羽化 → 给原图建「图层蒙版」→ 删掉生成层。
+ *   产物 = 一张干净的像素层 + 一个可编辑蒙版（形状就是元素），**不产生剪贴蒙版、不做合并**。
+ *   旧版走过「剪贴到生成层 → 合并两层」，实测两个坑：
+ *     ① 剪贴命令会静默作用到别的层上（校验只看 activeLayer 的 group 标记，看不出打错层），
+ *        合并出来的层其实是整张原图 —— 用户看到的就是「拆出来的不是元素，是一整块/剪切蒙版」；
+ *        日志里的「结果层没有透明区域」正是这个状态的证据。
+ *     ② 合并会把蒙版烘进像素，之后无法再调形状。
+ *   另外重建前先做两项体检（覆盖率 / 轮廓内均色距离），避免"模型没给元素"时把整幅原图当元素层。
+ *
+ * 需在 executeAsModal 内调用；任何一步失败都清理干净并返回 false（保留模型输出，不毁图）。
  */
 async function rebuildLayerWithOriginalPixels(origEntry, genLayerId, layerName, W, H, docId, opts) {
   const useMask = !!(opts && opts.useMask);
@@ -1592,99 +2696,131 @@ async function rebuildLayerWithOriginalPixels(origEntry, genLayerId, layerName, 
   let gen = null;
   try {
     const ls = doc.layers || [];
-    for (let i = 0; i < ls.length; i++) { if (ls[i] && ls[i].id === genLayerId) { gen = ls[i]; break; } }
+    /* id 类型不保证一致（DOM 层偶尔给对象/字符串，调用方传 number）：
+     * 用字符串比较，否则会「找不到生成层」静默跳过重建，用户看到的就是模型原图。 */
+    for (let i = 0; i < ls.length; i++) {
+      if (ls[i] && String(ls[i].id) === String(genLayerId)) { gen = ls[i]; break; }
+    }
   } catch (e) { diag("rebuild: 查找生成层失败 " + e.message); }
-  if (!gen) { diag("rebuild: 未找到生成层，跳过"); return false; }
+  if (!gen) { diag("rebuild: 未找到生成层 id=" + genLayerId + "，跳过"); return false; }
 
-  /* 整幅不透明输出（模型没给透明背景、抠色也没成功）→ 不能剪贴：
-   * 否则整张原图会盖满画布，元素层退化成原图副本。 */
+  /* 背景层没有 alpha 通道 → 覆盖率恒 100%，会被误判成「模型没给元素轮廓」。
+   * 这里再兜一次（抠色路径已经做过），保证判定基于真实透明度。 */
+  await ensureAlphaLayer(doc.id, gen.id);
+
+  /* 体检①：生成层必须有「元素轮廓」——既不能铺满整幅，也不能是空的。
+   * 旧实现只看 bounds 占比，全透明的边角会被算成"有形状"，扣错了也发现不了。
+   * ⚠ 抠色有两条路径：①写像素 alpha ②魔棒建「图层蒙版」。后者不改像素 alpha，
+   *   所以必须先读蒙版；只读像素会把「已经抠好的层」判成 100% 不透明。 */
+  let gs = await layerMaskStats(doc.id, gen.id, 96);
+  if (gs) {
+    gs.mean = await meanColorInMask(doc.id, gen.id, gs.mask, 96);
+  } else {
+    gs = await layerAlphaStats(doc.id, gen.id, 96);
+  }
   let bw = 0, bh = 0;
   try {
     const b = readLayerPixelBounds(gen);
     if (b) { bw = b.right - b.left; bh = b.bottom - b.top; }
   } catch (e) { /* ignore */ }
-  let hasAlphaShape = useMask;
-  if (!hasAlphaShape) {
-    hasAlphaShape = !(W && H && bw >= W * 0.98 && bh >= H * 0.98);
-  }
-  if (!hasAlphaShape) {
-    diag("rebuild: 生成层覆盖整幅且无有效蒙版（" + Math.round(bw) + "×" + Math.round(bh) + "），判定为不透明输出 → 保留生成层");
-    return false;
-  }
-
-  let added = null, clipped = false;
-  try {
-    /* 1) 置入原图（落在生成层正上方，剪贴基底就是生成层） */
-    await placeEntryAsLayer(origEntry, { left: 0, top: 0, width: W, height: H }, layerName, null, doc.id, { smartObject: false, quiet: true });
-    try { added = doc.activeLayers[0]; } catch (e) { added = null; }
-    if (!added) throw new Error("原图置入失败");
-    if (added.id === gen.id) throw new Error("原图未生成新图层（置入未生效）");
-
-    /* 2) 剪贴 + 合并：形状来自生成层，颜色来自原图，产物是一张干净的像素层 */
-    clipped = await clipActiveLayerToBelow();
-    if (clipped) {
-      const merged = await mergeLayersByIds(doc, [gen.id, added.id]);
-      if (merged) {
-        try { merged.name = layerName; } catch (eN) { /* ignore */ }
-        /* 合并会把蒙版烘焙进像素 → 元素层变成"没蒙版"的纯像素层。
-         * 按结果层透明度重建一个可编辑蒙版，效果与"抠色蒙版"一致且不丢形状。 */
-        await restoreMaskFromAlpha(doc, merged.id);
-        diag("rebuild: 元素层已用原图像素合成（剪贴+合并，" + layerName + "）");
-        return true;
-      }
-      /* 合并失败：删掉刚置入的原图层（剪贴关系随之消失），走回退路径 */
-      diag("rebuild: 剪贴后合并失败，回退选区蒙版路径");
-      try { await deleteLayerById(doc, added.id); } catch (eD0) { /* ignore */ }
-      added = null;
-    } else {
-      /* 剪贴未生效：同样先清掉这层原图，避免回退路径再置入一层导致重影 */
-      diag("rebuild: 剪贴未生效，清理后回退选区蒙版路径");
-      try { await deleteLayerById(doc, added.id); } catch (eD1) { /* ignore */ }
-      added = null;
+  if (gs) {
+    if (gs.ratio < 0.004) {
+      diag("rebuild: 生成层几乎全透明（覆盖率 " + (gs.ratio * 100).toFixed(1) + "%），保留模型输出");
+      return false;
     }
-    return await rebuildViaSelectionMask(doc, gen, origEntry, layerName, W, H, opts);
-  } catch (e) {
-    diag("rebuild: 失败，保留生成层 -> " + ((e && e.message) || String(e)));
-    if (added) { try { await deleteLayerById(doc, added.id); } catch (e2) { /* ignore */ } }
-    try { await deselect(); } catch (e3) { /* ignore */ }
+    if (gs.ratio > 0.9) {
+      diag("rebuild: 生成层覆盖 " + (gs.ratio * 100).toFixed(1) + "% 画面（没有元素轮廓），" +
+        "拿原图重建只会得到整张原图 → 保留模型输出");
+      return false;
+    }
+  }
+  if (!gs && W && H && bw >= W * 0.98 && bh >= H * 0.98) {
+    diag("rebuild: 生成层覆盖整幅且无有效蒙版（" + Math.round(bw) + "×" + Math.round(bh) +
+      "），判定为不透明输出 → 保留生成层");
     return false;
   }
-}
 
-/* v1 回退：载入生成层选区 → 羽化 → 给原图加蒙版。任何一步失败都返回 false，不外抛。 */
-async function rebuildViaSelectionMask(doc, gen, origEntry, layerName, W, H, opts) {
-  const useMask = !!(opts && opts.useMask);
+  /* 体检②（内容一致性）放在「原图置入之后」——量的是同一个位置上原图与模型输出的色差，
+   * 只有把原图真的放到画布上才能读到对应像素。见下方步骤 1b。 */
+
   let added = null;
   try {
+    /* 1) 原图整层置入（像素来源） */
     await placeEntryAsLayer(origEntry, { left: 0, top: 0, width: W, height: H }, layerName, null, doc.id, { smartObject: false, quiet: true });
     try { added = doc.activeLayers[0]; } catch (e) { added = null; }
     if (!added) throw new Error("原图置入失败");
+    if (String(added.id) === String(gen.id)) throw new Error("原图未生成新图层（置入未生效）");
+
+    /* 1b) 体检②：轮廓位置的原图内容与模型输出是否对得上（模型重绘时常挪位/改比例）。
+     * 阈值 80：只有"明显不是同一个东西"才拦；正常色差/光影偏移仍然用原图像素覆盖。 */
+    if (gs) {
+      const dist = await silhouetteColorDistance(doc.id, added.id, gs);
+      if (dist != null && dist > 80) {
+        diag("rebuild: 轮廓内原图与模型输出色差 " + Math.round(dist) +
+          "（>80，说明元素位置/内容对不上）→ 保留模型输出，不用原图覆盖");
+        try { await deleteLayerById(doc, added.id); } catch (eD0) { /* ignore */ }
+        added = null;
+        return false;
+      }
+    }
+
+    /* 2) 生成层的轮廓 → 选区。
+     * 元素层抠色走的是「写像素 alpha」，并不一定建了图层蒙版；先试蒙版通道，
+     * 拿不到再退回透明度，两边都不行才放弃（否则像素级抠色的正常路径会被误判失败）。 */
     if (!(await selectLayerById(doc, gen.id))) throw new Error("无法选中生成层");
-    if (useMask) await selectLayerMaskChannel();
-    else await selectLayerTransparency();
-    if (!(await selectionNonEmpty())) {
-      diag("rebuild(v1): 生成层没有可见像素（选区为空），放弃重建、保留生成层");
+    let selOk = false;
+    if (useMask) {
+      try {
+        await selectLayerMaskChannel();
+        selOk = await selectionNonEmpty();
+      } catch (eSel) { selOk = false; }
+      if (!selOk) { try { await deselect(); } catch (eS0) { /* ignore */ } }
+    }
+    if (!selOk) {
+      await selectLayerTransparency();
+      selOk = await selectionNonEmpty();
+    }
+    if (!selOk) {
+      diag("rebuild: 生成层没有可见像素（选区为空），放弃重建、保留模型输出");
       try { await deleteLayerById(doc, added.id); } catch (eDel) { /* ignore */ }
       try { await deselect(); } catch (eD2) { /* ignore */ }
       return false;
     }
-    await featherSelection((opts && opts.feather != null) ? opts.feather : 1);
+    const featherPx = (opts && opts.feather != null) ? opts.feather : 1;
+    if (featherPx > 0) await featherSelection(featherPx);
+
+    /* 3) 选区套成原图层的蒙版（非破坏、可编辑；不再剪贴、不再合并） */
     if (!(await selectLayerById(doc, added.id))) throw new Error("无法选中原图层");
     const okMask = await applySelectionAsLayerMask();
-    if (!okMask) {
-      diag("rebuild(v1): 蒙版未建立，放弃重建、保留生成层");
+    try { await deselect(); } catch (eD4) { /* ignore */ }
+
+    /* 4) 验收：新层的可见范围必须接近生成层轮廓，否则视为失败。
+     * ⚠ 这里是「别把整张原图当元素层」的最后一道闸门：蒙版建出来了 ≠ 蒙版是对的
+     *   （选区残留/整幅选区时 okMask 为真但覆盖 100%）。所以只看 good，
+     *   不通过就一律清理回退，不能因为 okMask 为真就放行。 */
+    /* 验收同样蒙版优先：v3 的产物是「原图像素 + 轮廓蒙版」，
+     * 蒙版不改像素 alpha —— 读像素永远是 100%，会把做对的结果误删。 */
+    let as = null;
+    if (okMask) as = await layerMaskStats(doc.id, added.id, 96);
+    if (!as) as = await layerAlphaStats(doc.id, added.id, 96);
+    const good = !!(as && gs && as.ratio > Math.max(0.002, gs.ratio * 0.3) && as.ratio < 0.95) ||
+                 !!(as && !gs && okMask);
+    if (!good) {
+      diag("rebuild: 验收未通过（新层覆盖率 " + (as ? (as.ratio * 100).toFixed(1) + "%" : "读取失败") +
+        "，蒙版=" + okMask + "）→ 清理原图层、保留模型输出");
       try { await deleteLayerById(doc, added.id); } catch (eDel2) { /* ignore */ }
-      try { await deselect(); } catch (eD3) { /* ignore */ }
       return false;
     }
-    try { await deselect(); } catch (eD4) { /* ignore */ }
+
+    /* 5) 删掉生成层，元素层重命名 */
     const delOk = await deleteLayerById(doc, gen.id);
-    if (!delOk) diag("rebuild(v1): 删除生成层失败（保留，原图层在上）");
+    if (!delOk) diag("rebuild: 删除生成层失败（保留，位于元素层下方）");
     try { added.name = layerName; } catch (eN) { /* ignore */ }
-    diag("rebuild(v1): 元素层已用原图像素重建（" + layerName + "，删除生成层=" + delOk + "）");
+    diag("rebuild(v3): 元素层 = 原图像素 + 元素轮廓蒙版（" + layerName +
+      "，蒙版=" + okMask + "，覆盖率 " + (as ? (as.ratio * 100).toFixed(1) + "%" : "?") + "）");
     return true;
   } catch (e) {
-    diag("rebuild(v1): 失败，保留生成层 -> " + ((e && e.message) || String(e)));
+    diag("rebuild: 失败，保留生成层 -> " + ((e && e.message) || String(e)));
     if (added) { try { await deleteLayerById(doc, added.id); } catch (e2) { /* ignore */ } }
     try { await deselect(); } catch (e3) { /* ignore */ }
     return false;
@@ -1869,16 +3005,25 @@ async function buildOutpaintMaskPNG(w, h, rect) {
   }
 }
 
-/* 下载结果图到插件数据目录（固定文件名 psspark_result.png，每次覆盖），返回 File entry */
+/* 下载结果图到插件数据目录（默认名 psspark_result.png，每次覆盖），返回 File entry。
+ * ⚠ 扩展名以字节为准（sniffImageExt）：gpt-image-2.6 出 GIF 时服务端给的是 .gif，
+ * 若仍按调用方给的 .png 落盘，磁盘上就会出现「名 png 内容 GIF」的文件——
+ * 双击打不开、上传按后缀校验被拒、任何按扩展名判格式的代码都会误判。
+ * 返回的 entry.name 才是真实文件名，调用方必须用它（不要再硬写 psspark_result.png）。 */
 async function downloadResultToEntry(imgUrl, fileName) {
   log("下载结果图...");
   startProgress("下载结果图");
   const res = await xhrRequest({ method: "GET", url: imgUrl, responseType: "arraybuffer", timeout: 120000 });
   if (res.status !== 200) throw new Error(`下载结果图失败 HTTP ${res.status}`);
+  const buf = res.response;
+  const want = fileName || "psspark_result.png";
+  const ext = (typeof sniffImageExt === "function") ? sniffImageExt(buf) : "";
+  const finalName = (typeof nameWithExt === "function") ? nameWithExt(want, ext) : want;
+  if (ext && finalName !== want) diag("download: 真实格式 " + ext + "（" + (buf.byteLength || 0) + "B）→ " + want + " 改名为 " + finalName);
   const folder = await fs.getDataFolder();
   /* 候选多图时按候选序号命名（psspark_cand_2.png …），避免并发互相覆盖 */
-  const entry = await folder.createFile(fileName || "psspark_result.png", { overwrite: true });
-  await entry.write(res.response, { format: formats.binary });
+  const entry = await folder.createFile(finalName, { overwrite: true });
+  await entry.write(buf, { format: formats.binary });
   return entry;
 }
 
@@ -1960,10 +3105,22 @@ async function placeEntryAsLayer(entry, targetBounds, layerName, clip, targetDoc
   try { if (newLayer) targetDoc.activeLayers = [newLayer]; } catch (e) { diag("activeLayers warn: " + e.message); }
   if (!newLayer) throw new Error("结果图层写入失败");
 
-  /* 回退路径产物是普通像素层：按需转回智能对象，保证两条路径行为一致 */
+  /* 结果层必须能装下透明：PS 的「背景」层没有 alpha 通道，putPixels 写进去的 alpha 会被直接丢掉。
+   * 实测后果：抠色日志说「抠掉 64%」、画面一点没变 → alphaStats 读到 comps=3、覆盖率 100%
+   * → 重建判定「没有元素轮廓」→ 整层退回模型原图（用户看到的就是「最大摆放」+「抠色没生效」）。 */
+  await ensureAlphaLayer(targetDoc.id, newLayer.id);
+
+  /* 回退路径产物是普通像素层：按需转回智能对象，保证两条路径行为一致。
+   * 「背景」图层不能直接 newPlacedLayer（PS 报「智能对象无法用」），先解除背景属性。 */
   if (keepSO && placedVia === "open-doc") {
     try {
       await selectLayerById(newLayer.id);
+      try {
+        if (newLayer.isBackgroundLayer) {
+          await batchPlay([{ _obj: "set", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }], to: { _obj: "layer", isBackgroundLayer: false }, _options: { dialogOptions: "dontDisplay" } }]);
+          diag("fallback: 背景层已转为普通图层（智能对象前置条件）");
+        }
+      } catch (eBgSO) { diag("fallback: 解除背景属性失败 " + ((eBgSO && eBgSO.message) || String(eBgSO))); }
       await batchPlay([{ _obj: "newPlacedLayer", _options: { dialogOptions: "dontDisplay" } }]);
       diag("fallback: 像素层已转为智能对象");
     } catch (eSO) {
@@ -1971,7 +3128,15 @@ async function placeEntryAsLayer(entry, targetBounds, layerName, clip, targetDoc
     }
   }
 
-  /* 尺寸/位置对齐：按导出区域 1:1（重绘）或适配画布居中（生成） */
+  /* 尺寸/位置对齐：按导出区域 1:1（重绘）或适配画布居中（生成）。
+   * 取 bounds / transform 都是对「当前活动图层」生效：UXP 的活动层指针会滞后，
+   * 刚写入的层不一定是活动层 —— 一旦算错基准（读到别的层的 bounds），
+   * 变换偏移就全错，表现就是「结果没对齐」。这里先按 id 把结果层选准。 */
+  if (newLayer && newLayer.id != null) {
+    if (!(await selectLayerById(targetDoc, newLayer.id))) {
+      diag("placeEntry: 变换前未能选中结果层 id=" + newLayer.id + "（按当前活动层继续）");
+    }
+  }
   const r = await batchPlay([{ _obj: "get", _target: [{ _ref: "layer", _enum: "ordinal", _value: "targetEnum" }], _options: { dialogOptions: "dontDisplay" } }]);
   const lb = r[0].boundsNoEffects || r[0].bounds;
   const res2 = targetDoc.resolution || 72;
@@ -1988,6 +3153,8 @@ async function placeEntryAsLayer(entry, targetBounds, layerName, clip, targetDoc
     dstW = targetBounds.width; dstH = targetBounds.height;
     cx = targetBounds.left + dstW / 2;
     cy = targetBounds.top + dstH / 2;
+    /* 铺满模式是「按画布坐标对齐」的：dstW/dstH 就等于目标矩形，蒙版与原图严格对齐，
+     * 所以 aspectMismatch 记 false（比例问题由 rebuild 的内容体检兜底）。 */
     lastPlaceMeta = { aspectMismatch: false, stretched: true, lw: lw, lh: lh, dstW: dstW, dstH: dstH };
     const arDiff = Math.abs((lw / lh) / (dstW / dstH) - 1);
     /* fitCover：比例不一致时不再非等比拉伸（画布改过比例后抠图会被拉变形），
@@ -2007,8 +3174,10 @@ async function placeEntryAsLayer(entry, targetBounds, layerName, clip, targetDoc
         " 按铺满模式拉伸到 " + Math.round(dstW) + "×" + Math.round(dstH) +
         "（比例差 " + Math.round(arDiff * 100) + "%，保证与原图对齐）");
       if (arDiff > 0.05) {
-        log("⚠ 模型返回比例（" + Math.round(lw) + "×" + Math.round(lh) + "）与目标区域不一致，" +
-          "已拉伸铺满以免错位；如需完全不变形请换支持该比例尺寸的模型", "err");
+        /* 不报红：拉伸铺满是「保证与原图严格对齐」的正确处理（拆图的蒙版坐标全靠这一步），
+         * 之前用 err 级别弹出，用户看到红字以为生成失败了。 */
+        log("模型返回 " + Math.round(lw) + "×" + Math.round(lh) + "，已按目标区域拉伸对齐（比例差 " +
+          Math.round(arDiff * 100) + "%）；要完全不变形可换支持该尺寸比例的模型");
       }
     }
   } else if (targetBounds) {
@@ -2154,11 +3323,40 @@ function fitCoverSize(lw, lh, tw, th) {
 }
 
 /* 下载 + 置入（常规调用形态），返回结果文件 entry（供任务存储/再次插入复用）。
- * targetDocId 可选：目标文档 ID（运行时捕获）——按 ID 定位并切回，防活动指针滞后/失效。 */
+ * targetDocId 可选：目标文档 ID（运行时捕获）——按 ID 定位并切回，防活动指针滞后/失效。
+ *
+ * ⚠ 临时文件名必须唯一：拆图/历史插入/候选插入会在 PS 里交错执行（executeAsModal
+ * 之间能在 await 处穿插），共用固定的 psspark_result.png 时，后来的一次下载会把
+ * 前一次正在被 placeEvent / app.open 读取的文件覆盖掉 —— Windows 上实测表现为
+ * 「无法置入」「智能对象错误」「尺寸/位置不对」。改用带序号的临时文件，落层完成
+ * 后再复制回固定名（历史归档/再次插入仍依赖 psspark_result.png 这个名字）。 */
+let __placeFileSeq = 0;
 async function placeResultAsLayer(imgUrl, targetBounds, layerName, clip, targetDocId, opts) {
-  const entry = await downloadResultToEntry(imgUrl);
-  await placeEntryAsLayer(entry, targetBounds, layerName, clip, targetDocId, opts);
-  return entry;
+  __placeFileSeq++;
+  const tmpName = "psspark_place_" + Date.now() + "_" + __placeFileSeq + ".png";
+  const tmpEntry = await downloadResultToEntry(imgUrl, tmpName);
+  let placeErr = null;
+  try {
+    await placeEntryAsLayer(tmpEntry, targetBounds, layerName, clip, targetDocId, opts);
+  } catch (e) {
+    placeErr = e; /* 先存档结果图，再把原始错误抛给上层 */
+  }
+  let keepEntry = tmpEntry;
+  try {
+    const folder = await fs.getDataFolder();
+    const buf = await tmpEntry.read({ format: formats.binary });
+    /* 固定名沿用真实扩展名：GIF 就是 psspark_result.gif，不再写成一个名为 png 的 GIF */
+    const ext = (typeof sniffImageExt === "function") ? sniffImageExt(buf) : "";
+    const keepName = (typeof nameWithExt === "function") ? nameWithExt("psspark_result.png", ext) : "psspark_result.png";
+    const keep = await folder.createFile(keepName, { overwrite: true });
+    await keep.write(buf, { format: formats.binary });
+    keepEntry = keep;
+    try { await tmpEntry.delete(); } catch (eDel) { /* ignore */ }
+  } catch (eKeep) {
+    diag("placeResult: 固定名副本失败（保留临时文件） " + ((eKeep && eKeep.message) || String(eKeep)));
+  }
+  if (placeErr) throw placeErr;
+  return keepEntry;
 }
 
 /* 设置当前活动图层的不透明度（0~100）。

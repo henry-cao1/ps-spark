@@ -84,14 +84,34 @@ function diag(msg) {
   diagKick();
 }
 
+/* 追加写（不再每次整体重写）：之前的实现用 {overwrite:true} 把整个缓冲区
+ * 重写一遍，PS 恰好在「刚截断、还没写入」的瞬间退出/崩溃时，日志会变成 0 字节，
+ * 真机报错证据全部丢失（已实际发生过，排查时无从下手）。
+ * 现在只追加新增行，最坏情况也只丢最后一批。 */
+let diagWritten = 0;
 async function diagKick() {
   diagWriting = true;
   try {
     await new Promise((r) => setTimeout(r, 80)); // 合并同一批日志为一次写盘
-    const snapshot = diagBuffer.join("\n");
+    const fresh = diagBuffer.slice(diagWritten);
+    if (!fresh.length) return;
+    diagWritten = diagBuffer.length;
     const folder = await fs.getDataFolder();
-    const entry = await folder.createFile("psspark_debug.log", { overwrite: true });
-    await entry.write(snapshot, { format: formats.utf8 });
+    let entry = null;
+    try { entry = await folder.getEntry("psspark_debug.log"); }
+    catch (eGet) { entry = await folder.createFile("psspark_debug.log", { overwrite: true }); }
+    let text = fresh.join("\n") + "\n";
+    if (fresh.length === diagWritten) {
+      text = "\n===== " + new Date().toISOString() + " 新会话开始 =====\n" + text;
+    }
+    await entry.write(text, { format: formats.utf8, append: true });
+    /* 缓冲区只保留最近 300 条：原实现只增不减，长时间会话（历史页反复渲染、
+     * 每张图都写一行 dataURI）会把几十 MB 文本钉在内存里，面板越用越卡。 */
+    if (diagBuffer.length > 300) {
+      const drop = diagBuffer.length - 300;
+      diagBuffer.splice(0, drop);
+      diagWritten = Math.max(0, diagWritten - drop);
+    }
   } catch (e) { /* 诊断写失败不影响主流程 */ }
   finally {
     diagWriting = false;
@@ -111,11 +131,26 @@ window.addEventListener("unhandledrejection", (e) => {
 function envInfo() {
   const ua = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "";
   let platform = "unknown";
-  if (/Windows/i.test(ua)) platform = "Windows";
-  else if (/Mac OS X|Macintosh/i.test(ua)) platform = "macOS";
+  /* UXP 的 UA 在 Windows 上是 “(win32 10.0.19045; x64)”，没有 “Windows” 字样，
+     只匹配 /Windows/i 会落到 unknown。mac 先判，避免 x64 之类误伤。 */
+  if (/Mac OS X|Macintosh|macOS/i.test(ua)) platform = "macOS";
+  else if (/Windows|win32|win64/i.test(ua)) platform = "Windows";
   let psVer = "?";
   try { psVer = app.version || "?"; } catch (e) { /* ignore */ }
+  /* app.version 在部分 PS 版本上取不到（PS 2026 实测为 ?），从 UA 的 Photoshop/27.9.1 兜底 */
+  if (psVer === "?") {
+    const m = /Photoshop\/([0-9][0-9.]*)/i.exec(ua);
+    if (m) psVer = m[1];
+  }
   return { platform: platform, ps: psVer, ua: ua };
+}
+
+/* 快捷键提示用哪个修饰键：Windows 上是 Ctrl，macOS 是 Cmd。
+   原代码把 Cmd+V 写死在文案里，Windows 用户会照着按错键。 */
+function modKeyHint() {
+  const ua = (typeof navigator !== "undefined" && navigator.userAgent) ? navigator.userAgent : "";
+  const mac = /Mac OS X|Macintosh|macOS/i.test(ua);
+  return (!mac && /Windows|win32|win64/i.test(ua)) ? "Ctrl" : "Cmd";
 }
 
 /* 把平台 / PS 版本 / 数据目录真实路径写进日志：Windows 上路径与权限问题主要靠这一行定位 */
