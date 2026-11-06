@@ -11,10 +11,15 @@ Licensed under **AGPL-3.0**. Not an Adobe product; not affiliated with or endors
 | Platform | Package | Default UI |
 |---|---|---|
 | Windows 10/11 | `PS-Spark-1.7.0-en-win-2026-11-04.zip` | English |
-| macOS | `PS-Spark-1.7.0-mac-2026-11-04.zip` | Chinese |
+| macOS | `PS-Spark-1.7.0-mac-2026-11-06.zip` | English |
 
-Both packages contain the same plugin. The language can be switched at runtime under
-Settings ▸ Language.
+Both packages use the same plugin codebase; the Windows package will be refreshed separately to
+include the 2.6 catalog update. The language can be switched at runtime under Settings ▸ Language.
+
+## What's new
+
+- macOS package (2026-11-06): the model catalog adds `gpt-image-2.6` and uses it as the default
+  for new installs. A refreshed Windows package follows separately.
 
 ## Features
 

@@ -110,8 +110,8 @@ function memEntry(pathArr) {
   d.getElementById("btnDevOpen").dispatchEvent(new w.Event("click"));
   d.getElementById("dwTabBench").dispatchEvent(new w.Event("click"));
   ck("入口：工作台已打开", !d.getElementById("devWorkbench").classList.contains("hidden"), "");
-  await waitFor(() => d.querySelectorAll("#dwRetestModels input[type=checkbox]").length === 16, 3000, "复测模型列表");
-  ck("基准：模型复测列表渲染 16 项", d.querySelectorAll("#dwRetestModels input[type=checkbox]").length === 16,
+  await waitFor(() => d.querySelectorAll("#dwRetestModels input[type=checkbox]").length === 17, 3000, "复测模型列表");
+  ck("基准：模型复测列表渲染 17 项", d.querySelectorAll("#dwRetestModels input[type=checkbox]").length === 17,
     String(d.querySelectorAll("#dwRetestModels input[type=checkbox]").length));
   const checkedIds = Array.prototype.map.call(
     d.querySelectorAll("#dwRetestModels input[type=checkbox]:checked"), (c) => c.value);

@@ -18,7 +18,7 @@ function lsSetJSON(key, val) {
 
 /* ---------------- 服务定义 ---------------- */
 
-const DEFAULT_IMAGE_SERVICE = { baseUrl: "https://grsai.dakka.com.cn", model: "gpt-image-2.5" };
+const DEFAULT_IMAGE_SERVICE = { baseUrl: "https://grsai.dakka.com.cn", model: "gpt-image-2.6" };
 /* DeepSeek 旧模型名 deepseek-chat / deepseek-reasoner 已于 2026-07-24 停用；现行为 deepseek-flash / deepseek-v4-pro。
  * baseUrl 统一带版本段（/v1），与各平台「OpenAI 兼容」接入格式一致。 */
 const DEFAULT_TEXT_SERVICE = { baseUrl: "https://api.deepseek.com/v1", model: "deepseek-flash", region: "cn", visionModel: "__follow__" };
@@ -1090,7 +1090,8 @@ const IMAGE_MODEL_PRESETS = [
   /* —— gpt-image 系列（像素值 / 比例，走 OpenAI 兼容端点） —— */
   { id: "gpt-image-2", label: "gpt-image-2（基础 · 比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
   { id: "gpt-image-2-vip", label: "gpt-image-2-vip（1–4K · 支持透明）", group: "gpt", sizeKind: "pixel14k", imageSize: [] },
-  { id: "gpt-image-2.5", label: "gpt-image-2.5（默认 · 比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
+  { id: "gpt-image-2.5", label: "gpt-image-2.5（比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
+  { id: "gpt-image-2.6", label: "gpt-image-2.6（默认 · 比例/1K）", group: "gpt", sizeKind: "ratio1k", imageSize: [] },
   { id: "gpt-image-2.5-flare", label: "gpt-image-2.5-flare（1–4K · 支持透明）", group: "gpt", sizeKind: "pixel14k", imageSize: [] },
   { id: "gpt-image-2.5-sunburst", label: "gpt-image-2.5-sunburst（1–4K · 最高质量）", group: "gpt", sizeKind: "pixel14k", imageSize: [] },
   /* —— nano-banana 系列（比例出图，走统一端点 /v1/api/generate） —— */
@@ -1107,7 +1108,7 @@ const IMAGE_MODEL_PRESETS = [
   { id: "nano-banana-2-4k-cl", label: "nano-banana-2-4k-cl（4K · 含极端比例）", group: "nano", sizeKind: "ratioExt", imageSize: ["4K"] }
 ];
 
-/* 尺寸选项①：gpt-image-2 / gpt-image-2.5 —— 支持比例出图（按 1K 像素值发送） */
+/* 尺寸选项①：gpt-image-2 / 2.5 / 2.6 —— 支持比例出图（按 1K 像素值发送） */
 const SIZE_RATIO_1K = [
   ["auto", "auto（自动）"],
   ["1024x1024", "1:1 · 1024×1024"],
@@ -1210,6 +1211,7 @@ const SIZE_GENERIC = [
 const QUALITY_BY_MODEL = {
   "gpt-image-2": { opts: ["auto"], dft: "auto" },
   "gpt-image-2.5": { opts: ["auto"], dft: "auto" },
+  "gpt-image-2.6": { opts: ["auto"], dft: "auto" },
   "gpt-image-2-vip": { opts: ["medium"], dft: "medium" },
   "gpt-image-2.5-flare": { opts: ["low", "medium", "high"], dft: "medium" },
   "gpt-image-2.5-sunburst": { opts: ["low", "medium", "high", "xhigh", "max"], dft: "high" }
@@ -1288,7 +1290,7 @@ function normalizeQualityForModel(model, quality) {
 /* ---------------- 模型画布上限（最大边长 / 最大长宽比） ----------------
  * 由尺寸表推导，而不是另写一份硬编码：表里出现过的最大边就是该模型能出的最大像素，
  * 表里的最长条就是它能接受的最极端比例。
- *   gpt-image-2 / 2.5（比例 1K）        → 1920px / 21:9 ≈ 2.33
+ *   gpt-image-2 / 2.5 / 2.6（比例 1K）  → 1920px / 21:9 ≈ 2.33
  *   gpt-image-2-vip / flare / sunburst → 3840px / 3:1
  *   nano-banana 系列（比例出图）        → 由 imageSize 决定（1K/2K/4K），比例 16:9
  *   nano-banana-2 / 2.1（ratioExt）    → 同上，比例可到 8:1

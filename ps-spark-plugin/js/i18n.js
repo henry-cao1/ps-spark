@@ -477,6 +477,7 @@ I18N.dict.en = {
   /* ===== 模型描述 / 选项后缀 ===== */
   "基础 · 比例/1K": "basic · aspect/1K",
   "默认 · 比例/1K": "default · aspect/1K",
+  "比例/1K": "aspect/1K",
   "1–4K · 支持透明": "1–4K · alpha",
   "1–4K · 最高质量": "1–4K · best quality",
   "快速 · 仅比例": "fast · aspect only",
@@ -544,8 +545,8 @@ I18N.dict.en = {
     "The original area may not align exactly — reduce one side's expansion, or switch to nano-banana-2 (up to 8:1).",
 
   /* ===== 拆图：模型能力提示 ===== */
-  "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——建议改用 gpt-image-2 / 2.5 系列。":
-    "Splitting needs a model that follows \u201cflat magenta backdrop + unchanged position\u201d strictly. Nano models tend to recompose the scene, so keying often fails — gpt-image-2 / 2.5 is recommended."
+  "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——建议改用 gpt-image-2 / 2.5 / 2.6 系列。":
+    "Splitting needs a model that follows \u201cflat magenta backdrop + unchanged position\u201d strictly. Nano models tend to recompose the scene, so keying often fails — gpt-image-2 / 2.5 / 2.6 is recommended."
 };
 
 /* 组合型文案：正则 → 英文（$1… 为捕获组） */

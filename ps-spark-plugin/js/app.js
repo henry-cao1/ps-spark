@@ -357,8 +357,8 @@ function initSettingsDropdowns() {
     if (!custom) saveImageServiceFromForm(false);
   });
 
-  /* 图像模型：下拉可选（gpt-image 系列，文档 2026-09 版）；尺寸/质量选项随模型联动 */
-  initDropdown("imgModel", imgModelOptions(), "gpt-image-2.5", function (v) {
+  /* 图像模型：下拉可选（gpt-image / nano-banana 系列，文档 2026-11 版）；尺寸/质量选项随模型联动 */
+  initDropdown("imgModel", imgModelOptions(), "gpt-image-2.6", function (v) {
     const custom = v === "__custom__";
     $("imgModelCustom").classList.toggle("hidden", !custom);
     if (!custom) {
@@ -521,7 +521,7 @@ function refreshTextVisionNote() {
 
 /* ---- 下拉选项构造 ---- */
 
-/* 图像模型选项行（含系列分组标题，便于在 16 个模型里定位） */
+/* 图像模型选项行（含系列分组标题，便于在模型列表里定位） */
 function imageModelOptionRows() {
   const rows = [];
   [["gpt", "gpt-image 系列"], ["nano", "nano-banana 系列"]].forEach(function (g) {
@@ -3648,7 +3648,7 @@ function renderDecompView() {
     if (typeof isNanoModel === "function" && isNanoModel(resolveModel("decomp"))) {
       mcard.appendChild(el("div", "dim-note warn-note",
         "拆图需要模型严格照做「纯洋红底 + 位置不变」。nano 系列常会重新构图，抠色容易失败——" +
-        "建议改用 gpt-image-2 / 2.5 系列。"));
+        "建议改用 gpt-image-2 / 2.5 / 2.6 系列。"));
     }
   } catch (eNano) { /* 模型判断失败不影响面板 */ }
   host.appendChild(mcard);
@@ -4583,7 +4583,7 @@ async function startDecomp() {
     /* 有层没拿到纯色底：说清楚原因 + 给下一步动作（否则用户只看到"元素层带着整幅背景"） */
     if (probeFailN > 0) {
       const tip = "⚠ " + probeFailN + " 层没拿到纯洋红底：模型没照做「只画元素 + 平铺洋红」的指令，" +
-        "这些层保留的是整幅生成图（没有蒙版）。建议把拆图模型换成 gpt-image-2 / 2.5 后重试。";
+        "这些层保留的是整幅生成图（没有蒙版）。建议把拆图模型换成 gpt-image-2 / 2.5 / 2.6 后重试。";
       log(tip, "err");
       diag("decomp: probe failed " + probeFailN + " layer(s)");
     }

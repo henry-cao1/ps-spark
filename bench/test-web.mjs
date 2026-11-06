@@ -109,7 +109,7 @@ try {
   const state = await j("/api/state");
   ck("状态：返回数据目录", state.body && state.body.dataDir === DATA, state.body ? state.body.dataDir : "");
   ck("状态：Key 未配置时 keyReady=false", state.body && state.body.keyReady === false, "");
-  ck("状态：模型目录 17 个（16 云端 + 1 本地预设）", state.body && state.body.models.length === 17, String(state.body && state.body.models.length));
+  ck("状态：模型目录 18 个（17 云端 + 1 本地预设）", state.body && state.body.models.length === 18, String(state.body && state.body.models.length));
   ck("状态：本地预设按 comfy:<id> 命名", state.body && state.body.models.some((m) => m.id.indexOf("comfy:") === 0),
     (state.body && state.body.models.filter((m) => m.id.indexOf("comfy") === 0).map((m) => m.id).join(",")) || "");
   ck("状态：用例 1 个", state.body && state.body.cases.length === 1, "");

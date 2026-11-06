@@ -545,6 +545,15 @@ w.document.body.appendChild(stub);
   ck("扩图口径：老数据（无 mode）按百分比处理", es3.mode === "percent" && es3.left === 270 && es3.up === 203,
     JSON.stringify(es3));
 
+  const p26 = JSON.parse(w.eval('JSON.stringify(imgModelPreset("gpt-image-2.6"))'));
+  ck("模型目录：gpt-image-2.6 已登记为比例/1K",
+    !!p26 && p26.group === "gpt" && p26.sizeKind === "ratio1k", JSON.stringify(p26));
+  ck("模型目录：2.6 使用 1K 比例档位",
+    w.eval('sizeHasValue(sizeOptionsForModel("gpt-image-2.6"),"1672x941")') === true, "");
+  ck("模型目录：2.6 质量默认 auto",
+    w.eval('defaultQualityForModel("gpt-image-2.6")') === "auto",
+    w.eval('defaultQualityForModel("gpt-image-2.6")'));
+
   const lim1 = JSON.parse(w.eval('JSON.stringify(modelCanvasLimit("gpt-image-2.5"))'));
   ck("模型上限：gpt-image-2.5 = 1920px / 21:9",
     lim1.maxSide === 1920 && Math.abs(lim1.maxRatio - 1920 / 832) < 0.01, JSON.stringify(lim1));
